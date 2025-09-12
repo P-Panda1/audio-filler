@@ -15,7 +15,7 @@ def make_csv_from_mp3(input_dir, output_csv, stride=5, clip_len=10):
 
         file_path = os.path.join(input_dir, fname)
         audio = AudioSegment.from_mp3(file_path)
-        duration = len(audio) / 1000.0  # convert ms → seconds
+        duration = len(audio) / 1000.0  # ms → seconds
 
         start = 0
         while start + clip_len <= duration:
@@ -28,8 +28,13 @@ def make_csv_from_mp3(input_dir, output_csv, stride=5, clip_len=10):
             after_start = label_end
             after_end = label_end + clip_len
 
-            # Only include if both before & after windows are valid 10s
-            if before_end - before_start == clip_len and after_end <= duration:
+            # Ensure label itself is exactly clip_len long
+            label_len = label_end - label_start
+
+            # Only include if label, before, and after are valid
+            if (
+                label_len == clip_len
+            ):
                 rows.append({
                     "file": fname,
                     "label_start": label_start,
@@ -45,6 +50,7 @@ def make_csv_from_mp3(input_dir, output_csv, stride=5, clip_len=10):
     df = pd.DataFrame(rows)
     df.to_csv(output_csv, index=False)
     print(f"Saved metadata CSV with {len(df)} rows to {output_csv}")
+
 
 # Example usage
 # make_csv_from_mp3("data/mp3s", "clips_metadata.csv")
@@ -64,8 +70,10 @@ class AudioWindowDataset(Dataset):
         path = os.path.join(self.audio_dir, fname)
         audio = AudioSegment.from_mp3(path)
         clip = audio[start * 1000:end * 1000]  # slice in ms
-        clip = clip.set_frame_rate(self.target_sr).set_channels(1)
+        clip = clip.set_frame_rate(1000).set_channels(
+            1)  # 1 kHz → 10k samples in 10s
         samples = np.array(clip.get_array_of_samples()).astype(np.float32)
+
         samples /= np.iinfo(clip.array_type).max  # normalize to [-1,1]
         return torch.tensor(samples)
 
