@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchaudio.transforms import Spectrogram, MelSpectrogram, InverseMelScale, GriffinLim
 
 
 class TransformerBlock(nn.Module):
@@ -27,31 +28,14 @@ class TransformerBlock(nn.Module):
 
 
 class AudioModel1(nn.Module):
-    """
-    In this model, we take a 15second audio clip in wav format as the input at 16kHz refresh rate.
-    We use this audio format and first we add to layers to the input layer with the layers being
-        1. Original Audio Clip
-        2. the Modulus of the Audio Clip
-        3. The sign of the Audio Clip ie. -1,0,1
-
-    We then pass this 3 channels into a convolutional encoding block.
-    In the end mimicing a VAE we have a latent layer with 128 channels, that is .
-
-    There are 2 potential outputs of this model. 
-        1. One will be a classification output. The output dimension of this layer is 15.
-        2. The second will be a reconstruction output. The output dimension of this layer is (1, 240000)
-            which is the same as the input dimension.
-    Args:
-        input_channels (int): Number of input channels. Default is 1 for mono audio.
-        num_classes (int): Number of output classes for classification. Default is 15.
-
-    """
-
-    def __init__(self, input_channels=1, num_classes=15, latent_dim=128):
+    def __init__(self, input_channels=1, num_classes=15, latent_dim=128, n_fft=1024, hop_length=256, n_mels=128):
         super(AudioModel1, self).__init__()
         self.input_channels = input_channels
         self.num_classes = num_classes
         self.latent_dim = latent_dim
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.n_mels = n_mels
         conv1_channels = input_channels * 3  # Original, Modulus, Sign channels
 
         # Activation function
@@ -59,8 +43,6 @@ class AudioModel1(nn.Module):
         self.leaky_relu = nn.LeakyReLU(0.2)
 
         # --- Convolutional Layers ---
-        # These layers are designed to extract features from the input audio waveform.
-
         self.conv1 = nn.Conv1d(in_channels=conv1_channels,
                                out_channels=32,
                                kernel_size=8,
@@ -83,63 +65,107 @@ class AudioModel1(nn.Module):
             dim=128, num_heads=4, ff_mult=4, dropout=0.1)
         self.bn3 = nn.BatchNorm1d(128)
 
-        # --- Latent Layer ---
-        # This layer represents the compressed representation of the input audio.
-        self.fc_mu = nn.Linear(128 * 10000, latent_dim)
-        self.fc_log_var = nn.Linear(128 * 10000, latent_dim)
+        # --- Frequency Domain Processing ---
+        # Add frequency encoder
+        self.freq_encoder = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(32),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2)
+        )
+
+        # Audio transforms for frequency processing
+        self.to_mel = MelSpectrogram(
+            n_fft=n_fft, hop_length=hop_length, n_mels=n_mels)
+        self.inverse_mel = InverseMelScale(n_stft=n_fft//2 + 1, n_mels=n_mels)
+        self.griffin_lim = GriffinLim(n_fft=n_fft, hop_length=hop_length)
+
+        # Calculate dimensions after convolutions
+        time_features = 128 * 10000  # As in your original code
+        freq_features = 128 * (n_mels // 4) * ((240000 // hop_length + 1) // 4)
+
+        # Update latent layer to handle combined features
+        self.fc_mu = nn.Linear(time_features + freq_features, latent_dim)
+        self.fc_log_var = nn.Linear(time_features + freq_features, latent_dim)
 
         # --- Fully Connected Layers for Classification ---
-        # These layers will perform the classification based on the extracted features.
         self.fc1 = nn.Linear(latent_dim, 64)
         self.batchnorm1 = nn.BatchNorm1d(64)
         self.fc2 = nn.Linear(64, num_classes)
         self.softmax = nn.Softmax(dim=1)
 
-        # --- Fully Connected Layers for Reconstruction ---
-        # These layers will reconstruct the input audio from the latent representation.
-        self.fc3 = nn.Linear(latent_dim, 128 * 5000)
-        self.decoder_transformer = TransformerBlock(
-            dim=128, num_heads=4, ff_mult=4, dropout=0.1)
-        self.deconv1 = nn.ConvTranspose1d(in_channels=128,
-                                          out_channels=64,
-                                          kernel_size=4,
-                                          stride=2,
-                                          # (B, 128, 5000) -> (B, 64, 10000)
-                                          padding=1)
-        self.bn4 = nn.BatchNorm1d(64)
-        self.deconv2 = nn.ConvTranspose1d(in_channels=64,
-                                          out_channels=32,
-                                          kernel_size=6,
-                                          stride=4,
-                                          # (B, 64, 10000) -> (B, 32, 40000)
-                                          padding=1)
-        self.bn5 = nn.BatchNorm1d(32)
-        self.deconv3 = nn.ConvTranspose1d(in_channels=32,
-                                          out_channels=2,
-                                          kernel_size=8,
-                                          stride=6,
-                                          # (B, 32, 40000) -> (B, 2, 240000)
-                                          padding=1)
+        # --- Reconstruction Decoders ---
+        # Modulus decoder (replaces the original waveform decoder)
+        self.modulus_decoder = nn.Sequential(
+            nn.Linear(latent_dim, 128 * 5000),
+            nn.LeakyReLU(0.2),
+            nn.Unflatten(1, (128, 5000)),
+            nn.ConvTranspose1d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose1d(64, 32, kernel_size=6, stride=4, padding=1),
+            nn.BatchNorm1d(32),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose1d(32, 1, kernel_size=8, stride=6, padding=1),
+            nn.ReLU()  # Modulus is always non-negative
+        )
 
-    def encoder(self, x):
+        # Frequency decoder (for sign extraction)
+        self.freq_decoder = nn.Sequential(
+            nn.Linear(latent_dim, 128 * (n_mels//4)
+                      * ((240000//hop_length+1)//4)),
+            nn.LeakyReLU(0.2),
+            nn.Unflatten(1, (128, n_mels//4, (240000//hop_length+1)//4)),
+            nn.ConvTranspose2d(128, 64, kernel_size=3,
+                               stride=2, padding=1, output_padding=1),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2,
+                               padding=1, output_padding=1),
+            nn.BatchNorm2d(32),
+            nn.LeakyReLU(0.2),
+            nn.ConvTranspose2d(32, 1, kernel_size=3, stride=1, padding=1),
+            nn.ReLU()  # Magnitude spectrograms are non-negative
+        )
+
+    def encode(self, x):
         """
-        Encoder part of the model that processes the input audio waveform.
+        Encoder part of the model that processes both time and frequency domains.
         """
-        # Prepare input with 3 channels: original, modulus, sign
+        # Time-domain encoding
         x_modulus = torch.abs(x)
         x_sign = torch.sign(x)
-        x = torch.cat([x, x_modulus, x_sign], dim=1)  # (B, 3, samples)
+        x_time = torch.cat([x, x_modulus, x_sign], dim=1)  # (B, 3, samples)
+
         # Pass through convolutional layers
-        x = self.leaky_relu(self.bn1(self.conv1(x)))  # (B, 32, 60000)
-        x = self.leaky_relu(self.bn2(self.conv2(x)))  # (B, 64, 20000)
-        x = self.leaky_relu(self.bn3(self.conv3(x)))  # (B, 128, 10000)
-        x = x.permute(0, 2, 1)  # (B, 10000, 128) for transformer
-        x = self.encoder_transformer(x)
-        x = x.permute(0, 2, 1)  # (B, 128, 10000)
-        x = x.contiguous().view(x.size(0), -1)  # Flatten for FC layer
+        x_time = self.leaky_relu(
+            self.bn1(self.conv1(x_time)))  # (B, 32, 60000)
+        x_time = self.leaky_relu(
+            self.bn2(self.conv2(x_time)))  # (B, 64, 20000)
+        x_time = self.leaky_relu(
+            self.bn3(self.conv3(x_time)))  # (B, 128, 10000)
+        x_time = x_time.permute(0, 2, 1)  # (B, 10000, 128) for transformer
+        x_time = self.encoder_transformer(x_time)
+        x_time = x_time.permute(0, 2, 1)  # (B, 128, 10000)
+        time_features = x_time.contiguous().view(x_time.size(0), -1)  # Flatten
+
+        # Frequency-domain encoding
+        spectrogram = self.to_mel(x).unsqueeze(1)  # Add channel dimension
+        freq_features = self.freq_encoder(spectrogram)
+        freq_features = freq_features.contiguous().view(freq_features.size(0), -1)
+
+        # Combine features
+        combined = torch.cat([time_features, freq_features], dim=1)
+
         # Latent representation
-        mu = self.fc_mu(x)
-        log_var = self.fc_log_var(x)
+        mu = self.fc_mu(combined)
+        log_var = self.fc_log_var(combined)
+
         return mu, log_var
 
     def reparameterize(self, mu, log_var):
@@ -150,21 +176,33 @@ class AudioModel1(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def decoder(self, latent):
+    def decode(self, z, original_audio=None, teacher_forcing=True):
         """
-        Decoder part of the model that reconstructs the audio waveform from the latent representation.
-        returns: reconstructed audio waveform
+        Decoder part that reconstructs modulus and extracts sign from frequency domain.
         """
-        x = self.leaky_relu(self.fc3(latent))
-        x = x.view(x.size(0), 128, 5000)  # (B, 128, 5000)
-        x = x.permute(0, 2, 1)  # (B, 5000, 128) for transformer
-        x = self.decoder_transformer(x)
-        x = x.permute(0, 2, 1)  # (B, 128, 5000)
-        x = self.leaky_relu(self.bn4(self.deconv1(x)))  # (B, 64, 10000)
-        x = self.leaky_relu(self.bn5(self.deconv2(x)))  # (B, 32, 40000)
-        x = self.deconv3(x)  # (B, 2, 240000)
+        # Reconstruct modulus from time domain
+        modulus_prediction = self.modulus_decoder(z)
 
-        return x
+        # Extract sign using either teacher forcing or frequency reconstruction
+        if teacher_forcing and original_audio is not None and self.training:
+            # Use true sign during training (teacher forcing)
+            sign_prediction = torch.sign(original_audio)
+        else:
+            # Reconstruct frequency domain and get waveform for sign extraction
+            freq_reconstruction = self.freq_decoder(z).squeeze(1)
+            linear_spec = self.inverse_mel(freq_reconstruction)
+            waveform_reconstruction = self.griffin_lim(linear_spec)
+
+            # Extract sign from frequency-based reconstruction
+            epsilon = 1e-8
+            normalized_waveform = waveform_reconstruction / \
+                (torch.abs(waveform_reconstruction) + epsilon)
+            sign_prediction = torch.sign(normalized_waveform)
+
+        # Combine modulus prediction with sign prediction
+        final_reconstruction = modulus_prediction * sign_prediction
+
+        return final_reconstruction, modulus_prediction, sign_prediction
 
     def classifier(self, latent):
         """
@@ -175,48 +213,69 @@ class AudioModel1(nn.Module):
         x = self.fc2(x)
         return x
 
-    def forward(self, x):
+    def forward(self, x, teacher_forcing=True):
         """
         Forward pass with reparameterization.
         """
         mu, log_var = self.encode(x)
         z = self.reparameterize(mu, log_var)
         class_logits = self.classifier(z)
-        reconstructed = self.decoder(z)
-        return class_logits, reconstructed, mu, log_var
+        final_recon, modulus_recon, sign_recon = self.decode(
+            z, x, teacher_forcing)
+        return class_logits, final_recon, modulus_recon, sign_recon, mu, log_var
 
-    def loss_function(self, x, class_targets, alpha=0.5, beta=0.001):
+    def loss_function(self, x, class_targets, alpha=0.5, beta=0.001, gamma=0.7):
         """
-        Combined loss function with KL divergence.
-
-        Args:
-            x (torch.Tensor): Input audio waveform.
-            class_targets (torch.Tensor): True class labels.
-            alpha (float): Weight for classification vs reconstruction loss.
-            beta (float): Weight for KL divergence loss.
-
-        Returns:
-            dict: Dictionary of losses.
+        Combined loss function with focus on modulus and sign reconstruction.
         """
-        class_logits, reconstructed, mu, log_var = self.forward(x)
+        class_logits, final_recon, modulus_recon, sign_recon, mu, log_var = self.forward(
+            x, teacher_forcing=True)
+
+        # Get true modulus and sign
+        x_modulus = torch.abs(x)
+        x_sign = torch.sign(x)
 
         # Classification loss
         classification_loss = F.cross_entropy(class_logits, class_targets)
 
-        # Reconstruction loss
-        reconstruction_loss = F.mse_loss(reconstructed, x)
+        # Modulus reconstruction loss
+        modulus_recon_loss = F.mse_loss(modulus_recon, x_modulus)
 
-        # KL divergence loss :cite[1]:cite[5]
+        # Sign loss (using cross-entropy for discrete classification)
+        # Convert sign to class labels: -1 -> 0, 0 -> 1, 1 -> 2
+        sign_classes = x_sign.squeeze(1) + 1  # Convert to 0, 1, 2
+        sign_classes = sign_classes.long()
+
+        # Convert the continuous sign prediction to class probabilities
+        sign_pred_probs = torch.stack([
+            -sign_recon.squeeze(1),  # Probability of -1 (inverse relationship)
+            torch.ones_like(sign_recon.squeeze(1)),  # Constant for zero
+            sign_recon.squeeze(1)  # Probability of +1
+        ], dim=-1)
+
+        sign_recon_loss = F.cross_entropy(sign_pred_probs, sign_classes)
+
+        # KL divergence
         kl_loss = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
-        kl_loss = kl_loss / mu.size(0)  # Average over batch
+        kl_loss = kl_loss / mu.size(0)
 
-        # Total loss
-        total_loss = alpha * classification_loss + \
-            (1 - alpha) * reconstruction_loss + beta * kl_loss
+        # Total loss - focus only on modulus and sign reconstruction
+        total_loss = (
+            alpha * classification_loss +
+            (1 - alpha) * (gamma * modulus_recon_loss + (1 - gamma) * sign_recon_loss) +
+            beta * kl_loss
+        )
+
+        # Calculate sign accuracy for monitoring
+        predicted_sign = torch.argmax(
+            sign_pred_probs, dim=-1) - 1  # Convert back to -1, 0, 1
+        sign_accuracy = (predicted_sign == x_sign.squeeze(1)).float().mean()
 
         return {
             'total_loss': total_loss,
             'classification_loss': classification_loss,
-            'reconstruction_loss': reconstruction_loss,
+            'modulus_recon_loss': modulus_recon_loss,
+            'sign_recon_loss': sign_recon_loss,
+            'sign_accuracy': sign_accuracy,
             'kl_loss': kl_loss
         }
