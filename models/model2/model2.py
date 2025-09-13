@@ -27,9 +27,9 @@ class TransformerBlock(nn.Module):
         return x
 
 
-class AudioModel1(nn.Module):
+class AudioEncoder1(nn.Module):
     def __init__(self, input_channels=1, num_classes=15, latent_dim=128, n_fft=1024, hop_length=256, n_mels=128):
-        super(AudioModel1, self).__init__()
+        super(AudioEncoder1, self).__init__()
         self.input_channels = input_channels
         self.num_classes = num_classes
         self.latent_dim = latent_dim
