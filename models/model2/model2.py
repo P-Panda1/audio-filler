@@ -31,13 +31,13 @@ class AudioEncoder1(nn.Module):
 
         # ---- Waveform convolutions ----
         # Parallel conv 1
-        self.conv1_1 = nn.Conv1d(in_channels=conv1_channels,
+        self.conv1_1 = nn.Conv1d(in_channels=conv1_channels,  # Parameters: 32*3*8 + 32 = 800
                                  out_channels=32,
                                  kernel_size=8,
                                  stride=4,
                                  padding=2)  # (B, 3, 240000) -> (B, 32, 60000)
         self.bn32 = nn.BatchNorm1d(32)
-        self.conv1_2 = nn.Conv1d(in_channels=64,
+        self.conv1_2 = nn.Conv1d(in_channels=32,  # Parameters: 128*32*5 + 128 = 20528
                                  out_channels=128,
                                  kernel_size=5,
                                  stride=3,
@@ -45,42 +45,52 @@ class AudioEncoder1(nn.Module):
         self.bn128 = nn.BatchNorm1d(128)
 
         # Parallel conv 2
-        self.conv2_1 = nn.Conv1d(in_channels=conv1_channels,
+        self.conv2_1 = nn.Conv1d(in_channels=conv1_channels,  # Parameters: 32*3*5 + 32 = 512
                                  out_channels=32,
                                  kernel_size=5,
                                  stride=3,
                                  padding=1)  # (B, 3, 240000) -> (B, 32, 80000)
 
-        self.conv2_2 = nn.Conv1d(in_channels=32,
+        self.conv2_2 = nn.Conv1d(in_channels=32,  # Parameters: 64*32*4 + 64 = 8224
                                  out_channels=64,
                                  kernel_size=4,
                                  stride=2,
                                  padding=1)  # (B, 32, 80000) -> (B, 64, 40000)
         self.bn64 = nn.BatchNorm1d(64)
 
-        self.conv2_3 = nn.Conv1d(in_channels=64,
+        self.conv2_3 = nn.Conv1d(in_channels=64,  # Parameters: 128*64*4 + 128 = 32896
                                  out_channels=128,
                                  kernel_size=4,
                                  stride=2,
                                  padding=1)  # (B, 64, 40000) -> (B, 128, 20000)
 
         # Final conv
-        self.final_conv_1 = nn.Conv1d(in_channels=256,
+        self.final_conv_1 = nn.Conv1d(in_channels=256,  # Parameters: 128*256*4 + 128 = 131200
                                       out_channels=128,
                                       kernel_size=4,
                                       stride=2,
                                       padding=1)  # (B, 128+128, 20000) -> (B, 128, 10000)
         self.final_bn128 = nn.BatchNorm1d(128)
-        self.final_conv2 = nn.Conv1d(in_channels=128,
+        self.final_conv2 = nn.Conv1d(in_channels=128,  # Parameters: 128*128*4 + 128 = 65664
                                      out_channels=128,
                                      kernel_size=4,
                                      stride=2,
                                      padding=1)  # (B, 128, 10000) -> (B, 128, 5000)
-        self.final_conv3 = nn.Conv1d(in_channels=128,
+        self.final_conv3 = nn.Conv1d(in_channels=128,  # Parameters: 128*128*7 + 128 = 114816
                                      out_channels=128,
                                      kernel_size=7,
                                      stride=5,
                                      padding=1)  # (B, 128, 5000) -> (B, 128, 1000)
+        self.final_conv4 = nn.Conv1d(in_channels=128,  # Parameters: 128*128*4 + 128 = 65664
+                                     out_channels=128,
+                                     kernel_size=4,
+                                     stride=2,
+                                     padding=1)  # (B, 128, 1000) -> (B, 128, 500)
+        self.final_conv5 = nn.Conv1d(in_channels=128,  # Parameters: 128*128*7 + 128 = 114816
+                                     out_channels=128,
+                                     kernel_size=7,
+                                     stride=5,
+                                     padding=1)  # (B, 128, 500) -> (B, 128, 100)
 
         # ---- Spectogram convolutions ----
         # Frequency conv
@@ -94,7 +104,7 @@ class AudioEncoder1(nn.Module):
             win_length=self.window_size_f,
             power=None,  # None returns complex values
             center=True
-        )  # (B, 1, 240000) -> (B, 1, 2001, 201)
+        )  # (B, 1, 240000) -> (B, 2, 2001, 201)
 
         # Time conv
         self.n_fft_t = 1000
@@ -107,60 +117,88 @@ class AudioEncoder1(nn.Module):
             win_length=self.window_size_t,
             power=None,  # None returns complex values
             center=True
-        )  # (B, 1, 240000) -> (B, 1, 501, 801)
+        )  # (B, 1, 240000) -> (B, 2, 501, 801)
 
-        self.freq_conv1 = nn.Conv2d(in_channels=1,
+        self.freq_conv1 = nn.Conv2d(in_channels=2,  # Parameters: 16*2*5*5 + 16 = 816
+                                    out_channels=16,
+                                    kernel_size=5,
+                                    stride=1,
+                                    padding=2)  # (B, 2, 2001, 201) -> (B, 16, 2001, 201)
+        self.freq_bn16 = nn.BatchNorm2d(16)
+
+        self.freq_conv2 = nn.Conv2d(in_channels=16,  # Parameters: 32*16*3*5 + 32 = 7712
                                     out_channels=32,
                                     kernel_size=(5, 3),
                                     stride=(4, 1),
-                                    # (B, 1, 2001, 201) -> (B, 32, 501, 201)
                                     padding=(2, 1)
-                                    )
+                                    )  # (B, 16, 2001, 201) -> (B, 32, 501, 201)
         self.freq_bn32 = nn.BatchNorm2d(32)
 
-        self.time_conv1 = nn.Conv2d(in_channels=1,
+        self.time_conv1 = nn.Conv2d(in_channels=2,  # Parameters: 16*2*5*5 + 16 = 816
+                                    out_channels=16,
+                                    kernel_size=5,
+                                    stride=1,
+                                    padding=2)  # (B, 2, 501, 801) -> (B, 16, 501, 201)
+        self.time_bn16 = nn.BatchNorm2d(16)
+        self.time_conv2 = nn.Conv2d(in_channels=16,  # Parameters: 32*16*3*5 + 32 = 7712
                                     out_channels=32,
                                     kernel_size=(3, 5),
                                     stride=(1, 4),
-                                    # (B, 1, 501, 801) -> (B, 32, 501, 201)
                                     padding=(1, 2)
-                                    )
+                                    )  # (B, 16, 501, 801) -> (B, 32, 501, 201)
         self.time_bn32 = nn.BatchNorm2d(32)
 
         # Combined conv
-        self.combined_conv1 = nn.Conv2d(in_channels=64,
-                                        out_channels=16,
+        self.combined_conv1 = nn.Conv2d(in_channels=64,  # Parameters: 32*64*3*3 + 32 = 18464
+                                        out_channels=32,
                                         kernel_size=3,
                                         stride=1,
-                                        padding=1)  # (B, 32+32, 501, 201) -> (B, 16, 501, 201)
+                                        padding=1)  # (B, 32+32=64, 501, 201) -> (B, 32, 501, 201)
 
+        self.combined_bn32 = nn.BatchNorm2d(32)
+
+        self.combined_conv2 = nn.Conv2d(in_channels=32,  # Parameters: 16*32*3*3 + 16 = 4624
+                                        out_channels=16,
+                                        kernel_size=3,
+                                        stride=2,
+                                        padding=1)  # (B, 32, 501, 201) -> (B, 16, 251, 101)
         self.combined_bn16 = nn.BatchNorm2d(16)
 
-        self.combined_conv2 = nn.Conv2d(in_channels=16,
+        self.combined_conv3 = nn.Conv2d(in_channels=16,  # Parameters: 1*16*3*3 + 1 = 145
                                         out_channels=1,
                                         kernel_size=3,
                                         stride=2,
-                                        padding=1)  # (B, 16, 501, 201) -> (B, 1, 251, 101)
+                                        padding=1)  # (B, 16, 251, 101) -> (B, 1, 125, 50))
 
-        self.combined_1dconv = nn.Conv1d(in_channels=251,
+        self.combined_1dconv = nn.Conv1d(in_channels=251,  # Parameters: 128*251*2 + 128 = 64256
                                          out_channels=128,
                                          kernel_size=2,
                                          stride=1,
                                          padding=0)  # (B, 251, 101) -> (B, 128, 100)
 
         # ---- Fully Connected Layers for Latent Space ----
-        self.cross_attention = CrossAttentionBlock(dim=128, num_heads=16)
+        self.cross_attention = CrossAttentionBlock(
+            dim=128, num_heads=16)  # Parameters: 128*128*3 + 128 = 49280
+        self.cross_attention2 = CrossAttentionBlock(
+            dim=128, num_heads=16)  # Parameters: 128*128*3 + 128 = 49280
+
+        self.cross_attention3 = CrossAttentionBlock(
+            dim=128, num_heads=16)  # Parameters: 128*128*3 + 128 = 49280
+
+        # Parameters: (128*100)* (500*2) + (500*2) = 1280500
         self.fully_connected = nn.Linear(128 * 100, latent_dim * 2)
 
         # Update latent layer to handle combined features
+        # Parameters: (500*2)*500 + 500 = 250500
         self.fc_mu = nn.Linear(latent_dim * 2, latent_dim)
+        # Parameters: (500*2)*500 + 500 = 250500
         self.fc_log_var = nn.Linear(latent_dim * 2, latent_dim)
 
         # ---- Decoders ----
         # --- Fully Connected Layers for Classification ---
-        self.fc1 = nn.Linear(latent_dim, 64)
+        self.fc1 = nn.Linear(latent_dim, 64)  # Parameters: 64*500 + 64 = 32064
         self.batchnorm1 = nn.BatchNorm1d(64)
-        self.fc2 = nn.Linear(64, num_classes)
+        self.fc2 = nn.Linear(64, num_classes)  # Parameters: 15*64 + 15 = 975
         self.softmax = nn.Softmax(dim=1)
 
         # --- Reconstruction Decoders ---
@@ -189,28 +227,52 @@ class AudioEncoder1(nn.Module):
 
         # ConvTranspose to reconstruct spectrogram
         self.fully_connected_dec = nn.Linear(latent_dim, 32 * 100)
-        self.convT_1 = nn.ConvTranspose2d(in_channels=32,
+        self.convT_1 = nn.ConvTranspose2d(in_channels=32,  # Parameters: 16*32*7*7 + 16 = 50160
                                           out_channels=32,
                                           kernel_size=7,
                                           stride=5,
                                           padding=1)  # (B, 32, 10, 10) -> (B, 16, 50, 50)
         self.bn32_dec = nn.BatchNorm2d(32)
-        self.convT_2 = nn.ConvTranspose2d(in_channels=32,
+        self.convT_2 = nn.ConvTranspose2d(in_channels=32,  # Parameters: 16*32*6*6 + 16 = 18448
                                           out_channels=16,
                                           kernel_size=6,
                                           stride=4,
                                           padding=1)  # (B, 32, 50, 50) -> (B, 16, 200, 200)
         self.bn16_dec = nn.BatchNorm2d(16)
-        self.convT_3 = nn.ConvTranspose2d(in_channels=16,
+        self.convT_3 = nn.ConvTranspose2d(in_channels=16,  # Parameters: 8*16*7*7 + 8 = 6272
                                           out_channels=8,
                                           kernel_size=7,
                                           stride=5,
                                           padding=1)  # (B, 16, 200, 200) -> (B, 8, 1000, 1000)
-        self.dec_conv1 = nn.Conv2d(in_channels=8,
+        self.convT_4 = nn.ConvTranspose2d(in_channels=8,  # Parameters: 4*8*4*4 + 4 = 516
+                                          out_channels=4,
+                                          kernel_size=4,
+                                          stride=2,
+                                          padding=1)  # (B, 8, 1000, 1000) -> (B, 4, 2000, 2000)
+        self.bn4_dec = nn.BatchNorm2d(4)
+        self.convT_5 = nn.ConvTranspose2d(in_channels=4,  # Parameters: 4*4*5*5 + 4 = 404
+                                          out_channels=4,
+                                          kernel_size=5,
+                                          stride=3,
+                                          padding=1)  # (B, 4, 2000, 2000) -> (B, 4, 6000, 6000)
+        self.dec_conv1 = nn.Conv2d(in_channels=4,  # Parameters: 1*4*4*4 + 1 = 65
+                                   out_channels=2,
+                                   kernel_size=4,
+                                   stride=2,
+                                   padding=1)  # (B, 4, 6000, 6000) -> (B, 2, 3000, 3000)
+        self.bn2_dec = nn.BatchNorm2d(2)
+        self.dec_conv2 = nn.Conv2d(in_channels=2,  # Parameters: 1*2*5*5 + 1 = 51
+                                   out_channels=1,
+                                   kernel_size=5,
+                                   stride=3,
+                                   padding=2)  # (B, 2, 3000, 3000) -> (B, 1, 1000, 1000)
+        self.dec_conv3 = nn.Conv2d(in_channels=1,  # Parameters: 1*1*4*4 + 1 = 17
                                    out_channels=1,
                                    kernel_size=4,
                                    stride=(1, 2),
-                                   padding=2)  # (B, 8, 1000, 1000) -> (B, 1, 1001, 501)
+                                   padding=(1, 1))  # (B, 1, 1000, 1000) -> (B, 1, 1001, 501)
+
+        # Total Parameters ~ 3.3 million
 
     def waveform_branch(self, x):
         """
@@ -238,6 +300,10 @@ class AudioEncoder1(nn.Module):
             self.final_bn128(self.final_conv2(x_combined)))  # (B, 128, 5000)
         x_combined = self.leaky_relu(
             self.final_conv3(x_combined))  # (B, 128, 1000)
+        x_combined = self.leaky_relu(
+            self.final_conv4(x_combined))  # (B, 128, 500)
+        x_combined = self.leaky_relu(
+            self.final_conv5(x_combined))  # (B, 128, 100)
 
         return x_combined
 
@@ -246,21 +312,35 @@ class AudioEncoder1(nn.Module):
         Processes the spectrogram through convolutional layers.
         """
         # Frequency-domain spectrogram
-        spectrogram_f = self.to_spec_f(x).unsqueeze(1)  # Add channel dimension
+        spectrogram_f = self.to_spec_f(x).squeeze(
+            1)  # (B, 1, 2001, 201) -> (B, 2001, 201)
+        spectrogram_f = torch.view_as_real(spectrogram_f)  # (B, 2001, 201, 2)
+        spectrogram_f = spectrogram_f.permute(
+            0, 3, 1, 2).contiguous()  # (B, 2, 2001, 201)
+        x_f = self.leaky_relu(self.freq_bn16(
+            self.freq_conv1(spectrogram_f)))  # (B, 16, 2001, 201)
         x_f = self.leaky_relu(self.freq_bn32(
-            self.freq_conv1(spectrogram_f)))  # (B, 32, 501, 201)
+            self.freq_conv2(x_f)))  # (B, 32, 501, 201)
 
         # Time-domain spectrogram
-        spectrogram_t = self.to_spec_t(x).unsqueeze(1)  # Add channel dimension
+        spectrogram_t = self.to_spec_t(x).squeeze(
+            1)  # (B, 1, 501, 801) -> (B, 501, 801)
+        spectrogram_t = torch.view_as_real(spectrogram_t)  # (B, 501, 201, 2)
+        spectrogram_t = spectrogram_t.permute(
+            0, 3, 1, 2).contiguous()  # (B, 2, 501, 201)
+        x_t = self.leaky_relu(self.time_bn16(
+            self.time_conv1(spectrogram_t)))  # (B, 16, 501, 201)
         x_t = self.leaky_relu(self.time_bn32(
-            self.time_conv1(spectrogram_t)))  # (B, 32, 501, 201)
+            self.time_conv2(x_t)))  # (B, 32, 501, 201)
 
         # Combine frequency and time features
         x_combined = torch.cat([x_f, x_t], dim=1)  # (B, 32+32=64, 501, 201)
         x_combined = self.leaky_relu(
-            self.combined_bn16(self.combined_conv1(x_combined)))  # (B, 16, 501, 201)
+            self.combined_bn32(self.combined_conv1(x_combined)))  # (B, 32, 501, 201)
         x_combined = self.leaky_relu(
-            self.freq_conv2(x_combined))  # (B, 1, 251, 101)
+            self.combined_bn16(self.combined_conv2(x_combined)))  # (B, 16, 251, 101)
+        x_combined = self.leaky_relu(
+            self.combined_conv3(x_combined))  # (B, 1, 251, 101)
         x_combined = x_combined.permute(0, 2, 3, 1).flatten(2)  # (B, 251, 101)
         x_combined = self.leaky_relu(
             self.combined_1dconv(x_combined))  # (B, 128, 100)
@@ -270,16 +350,22 @@ class AudioEncoder1(nn.Module):
         """
         Combines the outputs of the waveform and spectrogram branches using cross-attention.
         """
-        x_waveform = self.waveform_branch(x)  # (B, 128, 1000)
+        x_waveform = self.waveform_branch(x)  # (B, 128, 100)
         x_spectrogram = self.spectrogram_branch(x)  # (B, 128, 100)
 
         # Prepare for cross-attention
-        x_waveform = x_waveform.permute(0, 2, 1)  # (B, 1000, 128)
+        x_waveform = x_waveform.permute(0, 2, 1)  # (B, 100, 128)
         x_spectrogram = x_spectrogram.permute(0, 2, 1)  # (B, 100, 128)
-        x_waveform = self.cross_attention(
+        x_branch_1 = self.cross_attention(
             x_spectrogram, x_waveform)  # (B, 100, 128)
-        x_waveform = x_waveform.permute(0, 2, 1)  # (B, 128, 100)
-        return x_waveform
+        x_branch_2 = self.cross_attention2(
+            x_waveform, x_spectrogram)  # (B, 100, 128)
+
+        x_combined = self.cross_attention3(
+            x_branch_1, x_branch_2)  # (B, 100, 128)
+        x_combined = x_combined.permute(0, 2, 1)  # (B, 128, 100)
+
+        return x_combined
 
     def encode(self, x):
         """
@@ -326,7 +412,14 @@ class AudioEncoder1(nn.Module):
         x = self.leaky_relu(self.bn16_dec(
             self.convT_2(x)))  # (B, 16, 200, 200)
         x = self.leaky_relu(self.convT_3(x))  # (B, 8, 1000, 1000)
-        x = self.dec_conv1(x)  # (B, 1, 1001, 501)
+        x = self.leaky_relu(self.bn4_dec(self.convT_4(x))
+                            )  # (B, 4, 2000, 2000)
+        x = self.leaky_relu(self.convT_5(x))  # (B, 4, 6000, 6000)
+
+        x = self.leaky_relu(self.bn2_dec(self.dec_conv1(x))
+                            )  # (B, 2, 3000, 3000)
+        x = self.leaky_relu(self.dec_conv2(x))  # (B, 1, 1000, 1000)
+        x = self.dec_conv3(x)  # (B, 1, 1001, 501)
 
         return x
 

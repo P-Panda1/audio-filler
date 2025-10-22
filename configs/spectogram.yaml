@@ -1,0 +1,17 @@
+model:
+  name: SpectrogramBlock
+  blocks:
+    - id: spec_block
+      type: SpectrogramBlock
+      params:
+        n_fft_f: 4000
+        hop_length_f: 1200
+        window_size_f: 2000
+
+        n_fft_t: 1000
+        hop_length_t: 300
+        window_size_t: 1000
+
+        n_fft_recon: 2000
+        hop_length_recon: 600
+        win_length_recon: 2000
