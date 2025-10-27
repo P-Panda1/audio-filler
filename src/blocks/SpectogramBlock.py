@@ -63,21 +63,21 @@ class SpectrogramBlock(nn.Module):
         # (B, F_f, T_f)
         logmag_f = 10 * torch.log10(spec_f[:, 0]**2 + spec_f[:, 1]**2 + 1e-10)
 
-        spec_f = torch.stack([spec_f, logmag_f.unsqueeze(1)], dim=1)
+        spec_f = torch.cat([spec_f, logmag_f.unsqueeze(1)], dim=1)
 
         # ---- Time spectrogram ----
         spec_t = self.to_spec_t(x)
         spec_t = torch.stack([spec_t.real, spec_t.imag], dim=1)
         logmag_t = 10 * torch.log10(spec_t[:, 0]**2 + spec_t[:, 1]**2 + 1e-10)
 
-        spec_t = torch.stack([spec_t, logmag_t.unsqueeze(1)], dim=1)
+        spec_t = torch.cat([spec_t, logmag_t.unsqueeze(1)], dim=1)
 
         # ---- Reconstruction spectrogram ----
         spec_r = self.recon_to_spec(x)
         spec_r = torch.stack([spec_r.real, spec_r.imag], dim=1)
         logmag_r = 10 * torch.log10(spec_r[:, 0]**2 + spec_r[:, 1]**2 + 1e-10)
 
-        spec_r = torch.stack([spec_r, logmag_r.unsqueeze(1)], dim=1)
+        spec_r = torch.cat([spec_r, logmag_r.unsqueeze(1)], dim=1)
 
         return {
             "freq_spec": spec_f,

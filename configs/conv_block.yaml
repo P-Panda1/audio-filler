@@ -1,0 +1,43 @@
+model:
+  name: ConvBlock
+  blocks:
+    - id: ConvLayer
+      type: conv_layer_basic
+      params:
+        in_channels: 3
+        out_channels: 16
+        kernel_size: 3
+        stride: 1
+        padding: 1
+        activation: ReLU
+        batch_norm: True
+    - id: ConvLayer2
+      type: conv_layer_basic
+      params:
+        in_channels: 16
+        out_channels: 32
+        kernel_size: 5
+        stride: 1
+        padding: 2
+        activation: LeakyReLU
+        batch_norm: True
+    - id: ConvLayerFreq
+      type: conv_layer_squish_freq
+      params:
+        in_channels: 32
+        out_channels: 64
+        kernel_size: (5, 3)
+        stride: (4, 1)
+        padding: (2, 1)
+        activation: ReLU
+        batch_norm: True
+    - id: ConvLayerTime
+      type: conv_layer_squish_time
+      params:
+        in_channels: 32
+        out_channels: 64
+        kernel_size: (3, 5)
+        stride: (1, 4)
+        padding: (1, 2)
+        activation: LeakyReLU
+        batch_norm: True
