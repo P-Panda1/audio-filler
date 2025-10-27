@@ -1,0 +1,9 @@
+model:
+  name: InvSpectBlock
+  blocks:
+    - id: inv_spec_block
+      type: InvSpectBlock
+      params:
+        n_fft_recon: 2000
+        hop_length_recon: 600
+        win_length_recon: 2000
