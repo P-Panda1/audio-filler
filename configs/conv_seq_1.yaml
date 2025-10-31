@@ -2,7 +2,7 @@ model:
   name: ConvBlock
   blocks:
     - id: ConvLayer
-      type: conv_layer_basic
+      type: layer1
       params:
         in_channels: 3
         out_channels: 4
@@ -12,7 +12,7 @@ model:
         activation: ReLU
         batch_norm: True
     - id: ConvLayer2
-      type: conv_layer_basic
+      type: layer1
       params:
         in_channels: 4
         out_channels: 8
@@ -22,9 +22,9 @@ model:
         activation: LeakyReLU
         batch_norm: True
     - id: ConvLayerFreq
-      type: conv_layer_squish_freq
+      type: squish_freq
       params:
-        in_channels: 11
+        in_channels: 8
         out_channels: 4
         kernel_size: (5, 3)
         stride: (4, 1)
@@ -32,23 +32,44 @@ model:
         activation: ReLU
         batch_norm: True
     - id: ConvLayerTime
-      type: conv_layer_squish_time
+      type: squish_time
       params:
-        in_channels: 11
+        in_channels: 8
         out_channels: 4
         kernel_size: (3, 5)
         stride: (1, 4)
         padding: (1, 2)
         activation: LeakyReLU
         batch_norm: True
-    - id: stacked_conv
-      type: conv_layer_stacked
+    - id: MergedNodeConv
+      type: merge_node
+      params:
+        in_channels: 64
+        out_channels: 32
+        kernel_size: 4
+        stride: 1
+        padding: 1
+        batch_norm: True
+        activation: LeakyReLU
+    - id: SecondaryConv1
+      type: secondarylayer
       params:
         in_channels: 8
-        out_channels: 1
-        kernel_size: 1
-        stride: 1
-        padding: 0
+        out_channels: 4
+        kernel_size: 6
+        stride: 2
+        padding: 2
+        batch_norm: True
         activation: LeakyReLU
+    - id: SecondaryConv2
+      type: secondarylayer
+      params:
+        in_channels: 4
+        out_channels: 2
+        kernel_size: 7
+        stride: 5
+        padding: 1
         batch_norm: False
+        activation: None
+    
     

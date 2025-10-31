@@ -35,7 +35,7 @@ class ConvBlock(nn.Module):
         if use_bn:
             layers.append(nn.BatchNorm2d(out_c))
 
-        if act_name:
+        if act_name or act_name is not None:
             act_layer = getattr(nn, act_name, None)
             if act_layer is None:
                 raise ValueError(f"Unknown activation: {act_name}")
