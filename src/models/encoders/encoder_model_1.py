@@ -1,34 +1,10 @@
 import torch
 import torch.nn as nn
 from src.blocks.ConvBlock import ConvBlock
-from src.blocks.SpectogramBlock import SpectrogramBlock
-from src.blocks.InvSpecBlock import InvSpecBlock
 import yaml
 
-# Load YAML
-# with open("../../configs/spectogram.yaml", "r") as f:
-#     spec_cfg = yaml.safe_load(f)
-#     spec_params = spec_cfg["model"]["blocks"][0]["params"]
 
-# with open("../../configs/conv_block.yaml", "r") as f:
-#     conv_cfg = yaml.safe_load(f)
-#     basic_conv_blocks = []
-#     time_spec = None
-#     freq_spec = None
-#     stacked = None
-
-#     for block in conv_cfg["model"]["blocks"]:
-#         if block["type"] == "conv_layer_squish_freq":
-#             freq_spec = block["params"]
-#         elif block["type"] == "conv_layer_squish_time":
-#             time_spec = block["params"]
-#         elif block["type"] == "conv_layer_stacked":
-#             stacked = block["params"]
-#         else:
-#             basic_conv_blocks.append(block["params"])
-
-
-def parse_conv_cfg(conv_cfg):
+def parse_encoder_cfg(conv_cfg):
     basic_conv_blocks = []
     secondary_conv_blocks = []
     time_spec = None
@@ -118,16 +94,15 @@ class ConvFinalBranch(nn.Module):
         return final
 
 
-class EncoderModel(nn.Module):
-    def __init__(self, spec_config, conv_block_configs, latent_dim=500):
+class EncoderModel1(nn.Module):
+    def __init__(self, conv_block_configs, latent_dim=500):
         super().__init__()
 
         basic_conv_blocks, \
             secondary_conv_blocks, \
             freq_spec, time_spec, \
-            merge_node = parse_conv_cfg(
+            merge_node = parse_encoder_cfg(
                 conv_block_configs)
-        self.spec_block = SpectrogramBlock(spec_config)
         self.branch_1 = nn.ModuleList([
             ConvFirstBranch(basic_conv_blocks, freq_spec, time_spec) for _ in range(8)
         ])
@@ -143,9 +118,7 @@ class EncoderModel(nn.Module):
         self.fc_mu = nn.Linear(latent_dim * 2, latent_dim)
         self.fc_logvar = nn.Linear(latent_dim * 2, latent_dim)
 
-    def forward(self, x):
-
-        freq, time, _ = self.spec_block(x)
+    def forward(self, freq, time):
         branch_1_outputs = []
         for branch in self.branch_1:
             branch_1_outputs.append(branch(freq, time))

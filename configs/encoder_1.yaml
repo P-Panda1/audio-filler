@@ -1,5 +1,5 @@
 model:
-  name: ConvBlock
+  name: EncoderModel1
   blocks:
     - id: ConvLayer
       type: layer1
