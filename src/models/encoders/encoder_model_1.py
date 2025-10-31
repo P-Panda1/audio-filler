@@ -137,3 +137,8 @@ class EncoderModel1(nn.Module):
         logvar = self.fc_logvar(combined)
 
         return mu, logvar
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std

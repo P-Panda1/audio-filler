@@ -47,6 +47,7 @@ class DecoderModel1(nn.Module):
 
         self.activation = nn.ReLU()
         self.classifier = nn.Linear(latent_dim, class_size)
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
         out = self.Linear1(x)
@@ -56,4 +57,5 @@ class DecoderModel1(nn.Module):
         recon = self.final_layer(recon)
 
         class_out = self.classifier(x)
+        class_out = self.softmax(class_out)
         return recon, class_out
