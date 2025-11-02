@@ -28,9 +28,16 @@ class MusicGenreDataset(Dataset):
         # Precompute clip segments
         self.clips = []
         for audio_file, genre in self.audio_files:
-            info = torchaudio.info(audio_file)
-            audio_sample_rate = info.sample_rate
-            total_samples = info.num_frames
+            # info = torchaudio.info(audio_file)
+            # audio_sample_rate = info.sample_rate
+            # total_samples = info.num_frames
+            try:
+                # Load just the header (torchaudio.load loads full file, so use metadata instead)
+                waveform, audio_sample_rate = torchaudio.load(audio_file)
+                total_samples = waveform.size(1)
+            except Exception as e:
+                print(f"⚠️ Skipping {audio_file} due to load error: {e}")
+                continue
             start = 0
             while start < total_samples:
                 # clip_duration in seconds

@@ -1,18 +1,20 @@
+import os
 import yaml
 
 
 def load_all_configs():
-    configs = []
-    with open("configs/encoder_1.yaml", "r") as f:
-        encoder_config = yaml.safe_load(f)
-        configs.append(encoder_config)
-    with open("configs/decoder_1.yaml", "r") as f:
-        decoder_config = yaml.safe_load(f)
-        configs.append(decoder_config)
-    with open("configs/spectrogram_block.yaml", "r") as f:
-        spectrogram_config = yaml.safe_load(f)
-        configs.append(spectrogram_config)
-    with open("configs/inv_spectrogram_block.yaml", "r") as f:
-        inv_spectrogram_config = yaml.safe_load(f)
-        configs.append(inv_spectrogram_config)
+    # Get absolute path to the project root
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_dir = os.path.join(project_root, "configs")
+
+    def load_yaml(filename):
+        with open(os.path.join(config_dir, filename), "r") as f:
+            return yaml.safe_load(f)
+
+    configs = [
+        load_yaml("encoder_1.yaml"),
+        load_yaml("decoder_1.yaml"),
+        load_yaml("spectogram.yaml"),
+        load_yaml("invspec.yaml"),
+    ]
     return configs
