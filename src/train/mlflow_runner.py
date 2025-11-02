@@ -1,6 +1,6 @@
 import mlflow
 import mlflow.pytorch
-from src.train.trainer import train_model
+from src.train.train_function import train_model
 
 
 def run_experiment(
