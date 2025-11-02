@@ -7,9 +7,12 @@ import src.models.decoders.decoder_model_1 as decoder_module
 
 
 class EncoderDecoderModel(nn.Module):
-    def __init__(self, encoder_config, decoder_config, spectogram_config, inv_spectrogram_config, latent_dim=512, class_size=15):
+    def __init__(self, configs, latent_dim=512, class_size=15):
         super().__init__()
-
+        encoder_config, \
+            decoder_config, \
+            spectogram_config, \
+            inv_spectrogram_config = configs
         self.spectrogram = SpectogramBlock(spectogram_config)
         self.inv_spectrogram = InvSpecBlock(inv_spectrogram_config)
         self.encoder = encoder_module.EncoderModel1(encoder_config, latent_dim)
