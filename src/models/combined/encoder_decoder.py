@@ -20,7 +20,9 @@ class EncoderDecoderModel(nn.Module):
             decoder_config, latent_dim, class_size)
 
     def forward(self, x):
-        freq, time = self.spectrogram(x)
+        spec_dict = self.spectrogram(x)
+        freq = spec_dict['freq_spec']
+        time = spec_dict['time_spec']
         mu, var = self.encoder(freq, time)
         latent = self.encoder.reparameterize(mu, var)
         recon, class_out = self.decoder(latent)
