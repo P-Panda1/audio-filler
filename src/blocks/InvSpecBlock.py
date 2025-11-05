@@ -5,12 +5,13 @@ from torchaudio.transforms import Spectrogram, InverseSpectrogram
 
 class InvSpecBlock(nn.Module):
     def __init__(
-        self,
-        n_fft_recon,
-        hop_length_recon,
-        win_length_recon
+        self, config
     ):
         super().__init__()
+
+        n_fft_recon, \
+            hop_length_recon, \
+            win_length_recon = config["model"]["blocks"][0]["params"].values()
 
         # ---- Inverse spectrogram ----
         self.reconspec_to_waveform = InverseSpectrogram(

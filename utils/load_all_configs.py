@@ -14,7 +14,7 @@ def load_all_configs():
     configs = [
         load_yaml("encoder_1.yaml"),
         load_yaml("decoder_1.yaml"),
-        load_yaml("spectogram.yaml"),
+        load_yaml("spectrogram.yaml"),
         load_yaml("invspec.yaml"),
     ]
     return configs

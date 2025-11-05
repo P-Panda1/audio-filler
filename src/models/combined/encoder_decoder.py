@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-import src.blocks.SpectogramBlock as SpectogramBlock
-import src.blocks.InvSpecBlock as InvSpecBlock
+from src.blocks.SpectrogramBlock import SpectrogramBlock
+from src.blocks.InvSpecBlock import InvSpecBlock
 import src.models.encoders.encoder_model_1 as encoder_module
 import src.models.decoders.decoder_model_1 as decoder_module
 
@@ -11,9 +11,9 @@ class EncoderDecoderModel(nn.Module):
         super().__init__()
         encoder_config, \
             decoder_config, \
-            spectogram_config, \
+            spectrogram_config, \
             inv_spectrogram_config = configs
-        self.spectrogram = SpectogramBlock(spectogram_config)
+        self.spectrogram = SpectrogramBlock(spectrogram_config)
         self.inv_spectrogram = InvSpecBlock(inv_spectrogram_config)
         self.encoder = encoder_module.EncoderModel1(encoder_config, latent_dim)
         self.decoder = decoder_module.DecoderModel1(

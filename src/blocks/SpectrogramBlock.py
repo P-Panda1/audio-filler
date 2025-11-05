@@ -6,17 +6,18 @@ from torchaudio.transforms import Spectrogram, InverseSpectrogram
 class SpectrogramBlock(nn.Module):
     def __init__(
         self,
-        n_fft_f,
-        hop_length_f,
-        window_size_f,
-        n_fft_t,
-        hop_length_t,
-        window_size_t,
-        n_fft_recon,
-        hop_length_recon,
-        win_length_recon
+        config
     ):
         super().__init__()
+        n_fft_f, \
+            hop_length_f, \
+            window_size_f, \
+            n_fft_t, \
+            hop_length_t, \
+            window_size_t, \
+            n_fft_recon, \
+            hop_length_recon, \
+            win_length_recon = config["model"]["blocks"][0]["params"].values()
 
         # ---- Frequency spectrogram ----
         self.to_spec_f = Spectrogram(
@@ -53,31 +54,19 @@ class SpectrogramBlock(nn.Module):
             center=True
         )
 
+    @staticmethod
+    def _complex_to_logmag(spec):
+        # spec: (B, F, T) complex tensor
+        magnitude = torch.abs(spec)
+        logmag = 20 * torch.log10(magnitude + 1e-10)
+        return torch.cat([spec.real.unsqueeze(1), spec.imag.unsqueeze(1), logmag.unsqueeze(1)], dim=1)
+        # returns (B, 3, F, T): [real, imag, logmag]
+
     def forward(self, x):
         # x: (B, 1, T)
-
-        # ---- Frequency spectrogram ----
-        spec_f = self.to_spec_f(x)  # (B, 1, F_f, T_f)
-        spec_f = torch.stack([spec_f.real, spec_f.imag],
-                             dim=1)  # (B, 2, F_f, T_f)
-        # (B, F_f, T_f)
-        logmag_f = 10 * torch.log10(spec_f[:, 0]**2 + spec_f[:, 1]**2 + 1e-10)
-
-        spec_f = torch.cat([spec_f, logmag_f.unsqueeze(1)], dim=1)
-
-        # ---- Time spectrogram ----
-        spec_t = self.to_spec_t(x)
-        spec_t = torch.stack([spec_t.real, spec_t.imag], dim=1)
-        logmag_t = 10 * torch.log10(spec_t[:, 0]**2 + spec_t[:, 1]**2 + 1e-10)
-
-        spec_t = torch.cat([spec_t, logmag_t.unsqueeze(1)], dim=1)
-
-        # ---- Reconstruction spectrogram ----
-        spec_r = self.recon_to_spec(x)
-        spec_r = torch.stack([spec_r.real, spec_r.imag], dim=1)
-        logmag_r = 10 * torch.log10(spec_r[:, 0]**2 + spec_r[:, 1]**2 + 1e-10)
-
-        spec_r = torch.cat([spec_r, logmag_r.unsqueeze(1)], dim=1)
+        spec_f = self._complex_to_logmag(self.to_spec_f(x))
+        spec_t = self._complex_to_logmag(self.to_spec_t(x))
+        spec_r = self._complex_to_logmag(self.recon_to_spec(x))
 
         return {
             "freq_spec": spec_f,

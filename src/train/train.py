@@ -21,7 +21,7 @@ device = "cuda" if torch.cuda.is_available() else "mps"
 run_experiment(
     model=model,
     dataloader=dataloader,
-    num_epochs=10,
+    num_epochs=1,
     lr=1e-4,
     beta_kl=0.001,
     recon_weight=1.0,
