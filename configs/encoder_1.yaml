@@ -9,7 +9,7 @@ model:
         kernel_size: 3
         stride: 1
         padding: 1
-        activation: ReLU
+        activation: LeakyReLU
         batch_norm: True
     - id: ConvLayer2
       type: layer1
@@ -29,7 +29,7 @@ model:
         kernel_size: (5, 3)
         stride: (4, 1)
         padding: (2, 1)
-        activation: ReLU
+        activation: LeakyReLU
         batch_norm: True
     - id: ConvLayerTime
       type: squish_time
@@ -70,6 +70,6 @@ model:
         stride: 5
         padding: 1
         batch_norm: False
-        activation: None
+        
     
     

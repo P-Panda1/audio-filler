@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from src.blocks.ConvBlock import ConvBlock
-import yaml
+from functools import reduce
+import operator
 
 
 def parse_encoder_cfg(conv_cfg):
@@ -16,7 +17,7 @@ def parse_encoder_cfg(conv_cfg):
         elif block["type"] == "squish_time":
             time_spec = block["params"]
         elif block["type"] == "merge_node":
-            merge_node = block["params"]["out_features"]
+            merge_node = block["params"]
         elif block["type"] == "layer1":
             basic_conv_blocks.append(block["params"])
         elif block["type"] == "secondarylayer":
@@ -32,9 +33,11 @@ class ConvFirstBranch(nn.Module):
         self.conv_blocks = nn.ModuleList([
             ConvBlock(block_cfg) for block_cfg in basic_conv_blocks
         ])
-        self.residual_stride = [
-            block_cfg.get("stride", 1) for block_cfg in basic_conv_blocks
-        ].function(lambda x, y: x * y, 1)
+
+        self.residual_stride = reduce(operator.mul,
+                                      [block_cfg.get("stride", 1)
+                                       for block_cfg in basic_conv_blocks],
+                                      1)
 
         self.freq_conv = ConvBlock(freq_spec) if freq_spec else None
         self.time_conv = ConvBlock(time_spec) if time_spec else None
@@ -74,9 +77,10 @@ class ConvFinalBranch(nn.Module):
         self.conv_blocks = nn.ModuleList([
             ConvBlock(block_cfg) for block_cfg in secondary_conv_blocks
         ])
-        self.residual_stride = [
-            block_cfg.get("stride", 1) for block_cfg in secondary_conv_blocks
-        ].function(lambda x, y: x * y, 1)
+        self.residual_stride = reduce(operator.mul,
+                                      [block_cfg.get("stride", 1)
+                                       for block_cfg in secondary_conv_blocks],
+                                      1)
 
     def forward(self, x):
         final = x
