@@ -3,6 +3,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 import torchaudio
+from torchcodec.decoders import AudioDecoder
 
 
 class MusicGenreDataset(Dataset):
@@ -32,11 +33,12 @@ class MusicGenreDataset(Dataset):
             # audio_sample_rate = info.sample_rate
             # total_samples = info.num_frames
             try:
-                # Load just the header (torchaudio.load loads full file, so use metadata instead)
-                waveform, audio_sample_rate = torchaudio.load(audio_file)
-                total_samples = waveform.size(1)
+                decoder = AudioDecoder(source=audio_file)
+                audio_sample_rate = decoder.metadata.sample_rate
+                total_samples = decoder.metadata.duration_seconds_from_header * audio_sample_rate
+
             except Exception as e:
-                print(f"⚠️ Skipping {audio_file} due to load error: {e}")
+                print(f"⚠️ Skipping {audio_file}: {e}")
                 continue
             start = 0
             while start < total_samples:

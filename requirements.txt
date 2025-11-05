@@ -1,12 +1,22 @@
-torch=2.9.0
-torchaudio=2.9.0
-torchcodec=0.8.1
-numpy>=1.24.0
-matplotlib>=3.7.0
-pandas>=2.0.0
-ipython>=8.0.0
-pysoundfile>=0.9.0
-pydub>=0.25.0
-librosa>=0.10.0
-mutagen>=1.46.0
-mlflow>=2.5.0
+# Core Torch Stack
+torch==2.9.0
+torchaudio==2.9.0
+torchcodec==0.8.1  # Latest available version compatible with torch 2.9.0
+
+# Numerical / Data
+numpy>=1.26.0,<2.0
+pandas>=2.2.0,<3.0
+matplotlib>=3.9.0,<4.0
+ipython>=8.26.0,<9.0
+
+# Audio Processing
+SoundFile>=0.9.1
+pydub>=0.25.1
+librosa>=0.10.2
+mutagen>=1.47.0
+
+# Experiment Tracking
+mlflow>=2.15.0,<3.0
+
+# Optional but Recommended (FFmpeg + codecs support)
+ffmpeg-python>=0.2.0
