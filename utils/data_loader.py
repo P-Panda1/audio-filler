@@ -35,7 +35,8 @@ class MusicGenreDataset(Dataset):
             try:
                 decoder = AudioDecoder(source=audio_file)
                 audio_sample_rate = decoder.metadata.sample_rate
-                total_samples = decoder.metadata.duration_seconds_from_header * audio_sample_rate
+                total_samples = int(
+                    decoder.metadata.duration_seconds_from_header * audio_sample_rate)
 
             except Exception as e:
                 print(f"⚠️ Skipping {audio_file}: {e}")
@@ -43,11 +44,11 @@ class MusicGenreDataset(Dataset):
             start = 0
             while start < total_samples:
                 # clip_duration in seconds
-                end = start + (audio_sample_rate * clip_duration)
+                end = start + int(audio_sample_rate * clip_duration)
                 if end > total_samples:
                     if total_samples - start >= 10 * sample_rate:  # Check if at least 10s
                         end = total_samples
-                        padding = self.clip_length - (end - start)
+                        padding = int(self.clip_length - (end - start))
                         self.clips.append(
                             (audio_file, start, end, padding, genre))
                     break
@@ -61,7 +62,7 @@ class MusicGenreDataset(Dataset):
     def __getitem__(self, idx):
         audio_file, start, end, padding, genre = self.clips[idx]
         waveform, sr = torchaudio.load(
-            audio_file, frame_offset=start, num_frames=end-start)
+            audio_file, frame_offset=int(start), num_frames=int(end-start))
         waveform = torchaudio.functional.resample(waveform, sr, self.sample_rate)[
             0]  # Convert to mono
 
