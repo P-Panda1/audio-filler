@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-import src.blocks.ConvBlock as ConvBlock
-import src.blocks.ConvTransposeBlock as ConvTransposeBlock
+from src.blocks.ConvBlock import ConvBlock
+from src.blocks.ConvTransposeBlock import ConvTransposeBlock
 
 
 def parse_decoder_cfg(trans):
@@ -18,16 +18,16 @@ class TransposeLayer(nn.Module):
     def __init__(self, conv_layer, trans_layer):
         super().__init__()
 
-        self.mf = trans_layer.in_channels / conv_layer.out_channels
+        self.mf = trans_layer['in_channels'] / conv_layer['out_channels']
 
-        self.conv_block = nn.ModuleList([
+        self.conv_blocks = nn.ModuleList([
             ConvBlock(conv_layer) for _ in range(int(self.mf))
         ])
         self.conv_transpose_block = ConvTransposeBlock(trans_layer)
 
     def forward(self, x):
         conv_outs = []
-        for conv in self.conv_block:
+        for conv in self.conv_blocks:
             conv_outs.append(conv(x))
         concat_out = torch.cat(conv_outs, dim=1)
         final = self.conv_transpose_block(concat_out)
@@ -41,8 +41,8 @@ class DecoderModel1(nn.Module):
         self.Linear1 = nn.Linear(latent_dim, 4000)
         pair_blocks, final_block = parse_decoder_cfg(trans_config)
         self.transpose_layers = nn.Sequential(
-            TransposeLayer(conv_layer, trans_layer)
-            for conv_layer, trans_layer in pair_blocks)
+            *[TransposeLayer(conv_layer, trans_layer)
+              for conv_layer, trans_layer in pair_blocks])
         self.final_layer = ConvBlock(final_block)
 
         self.activation = nn.ReLU()
