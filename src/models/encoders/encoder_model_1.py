@@ -52,15 +52,15 @@ class ConvFirstBranch(nn.Module):
         residual1 = nn.AvgPool2d(
             kernel_size=self.residual_stride,
             stride=self.residual_stride
-        ).expand(out1.size())
+        )(x1)
 
         residual2 = nn.AvgPool2d(
             kernel_size=self.residual_stride,
             stride=self.residual_stride
-        ).expand(out2.size())
+        )(x2)
 
-        out1 = x1 + residual1(x1)  # Residual connection
-        out2 = x2 + residual2(x2)  # Residual connection
+        out1 = x1 + residual1  # Residual connection
+        out2 = x2 + residual2  # Residual connection
 
         freq = self.freq_conv(out1) if self.freq_conv else None
         time = self.time_conv(out2) if self.time_conv else None
