@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from src.blocks.ConvBlock import ConvBlock
-import yaml
+from functools import reduce
+import operator
 
 
 def parse_encoder_cfg(conv_cfg):
@@ -16,7 +17,7 @@ def parse_encoder_cfg(conv_cfg):
         elif block["type"] == "squish_time":
             time_spec = block["params"]
         elif block["type"] == "merge_node":
-            merge_node = block["params"]["out_features"]
+            merge_node = block["params"]
         elif block["type"] == "layer1":
             basic_conv_blocks.append(block["params"])
         elif block["type"] == "secondarylayer":
@@ -32,9 +33,11 @@ class ConvFirstBranch(nn.Module):
         self.conv_blocks = nn.ModuleList([
             ConvBlock(block_cfg) for block_cfg in basic_conv_blocks
         ])
-        self.residual_stride = [
-            block_cfg.get("stride", 1) for block_cfg in basic_conv_blocks
-        ].function(lambda x, y: x * y, 1)
+
+        self.residual_stride = reduce(operator.mul,
+                                      [block_cfg.get("stride", 1)
+                                       for block_cfg in basic_conv_blocks],
+                                      1)
 
         self.freq_conv = ConvBlock(freq_spec) if freq_spec else None
         self.time_conv = ConvBlock(time_spec) if time_spec else None
@@ -49,15 +52,15 @@ class ConvFirstBranch(nn.Module):
         residual1 = nn.AvgPool2d(
             kernel_size=self.residual_stride,
             stride=self.residual_stride
-        ).expand(out1.size())
+        )(x1)
 
         residual2 = nn.AvgPool2d(
             kernel_size=self.residual_stride,
             stride=self.residual_stride
-        ).expand(out2.size())
+        )(x2)
 
-        out1 = x1 + residual1(x1)  # Residual connection
-        out2 = x2 + residual2(x2)  # Residual connection
+        out1 = x1 + residual1  # Residual connection
+        out2 = x2 + residual2  # Residual connection
 
         freq = self.freq_conv(out1) if self.freq_conv else None
         time = self.time_conv(out2) if self.time_conv else None
@@ -74,9 +77,10 @@ class ConvFinalBranch(nn.Module):
         self.conv_blocks = nn.ModuleList([
             ConvBlock(block_cfg) for block_cfg in secondary_conv_blocks
         ])
-        self.residual_stride = [
-            block_cfg.get("stride", 1) for block_cfg in secondary_conv_blocks
-        ].function(lambda x, y: x * y, 1)
+        self.residual_stride = reduce(operator.mul,
+                                      [block_cfg.get("stride", 1)
+                                       for block_cfg in secondary_conv_blocks],
+                                      1)
 
     def forward(self, x):
         final = x
@@ -137,3 +141,8 @@ class EncoderModel1(nn.Module):
         logvar = self.fc_logvar(combined)
 
         return mu, logvar
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
