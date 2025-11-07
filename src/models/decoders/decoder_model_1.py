@@ -46,7 +46,13 @@ class DecoderModel1(nn.Module):
         self.final_layer = ConvBlock(final_block)
 
         self.activation = nn.ReLU()
-        self.classifier = nn.Linear(latent_dim, class_size)
+        self.mid_dim = (latent_dim // 4) * 3
+        self.classifier = nn.Sequential(
+            nn.Linear(latent_dim, self.mid_dim),
+            nn.ReLU(),
+            nn.Linear(self.mid_dim, class_size)
+        )
+
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):

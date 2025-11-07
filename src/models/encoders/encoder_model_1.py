@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from src.blocks.ConvBlock import ConvBlock
 from functools import reduce
 import operator
@@ -58,9 +59,22 @@ class ConvFirstBranch(nn.Module):
             kernel_size=self.residual_stride,
             stride=self.residual_stride
         )(x2)
+        # Match channels dynamically
+        if residual1.size(1) != out1.size(1):
+            # Create 1x1 conv weights on the fly
+            weight = torch.empty(out1.size(1), residual1.size(
+                1), 1, 1, device=residual1.device)
+            torch.nn.init.xavier_uniform_(weight)
+            residual1 = F.conv2d(residual1, weight)
 
-        out1 = x1 + residual1  # Residual connection
-        out2 = x2 + residual2  # Residual connection
+        if residual2.size(1) != out2.size(1):
+            weight = torch.empty(out2.size(1), residual2.size(
+                1), 1, 1, device=residual2.device)
+            torch.nn.init.xavier_uniform_(weight)
+            residual2 = F.conv2d(residual2, weight)
+
+        out1 = out1 + residual1  # Residual connection
+        out2 = out2 + residual2  # Residual connection
 
         freq = self.freq_conv(out1) if self.freq_conv else None
         time = self.time_conv(out2) if self.time_conv else None
@@ -90,7 +104,14 @@ class ConvFinalBranch(nn.Module):
         residual = nn.AvgPool2d(
             kernel_size=self.residual_stride,
             stride=self.residual_stride
-        )(x).expand(final.size())
+        )(x)
+
+        if residual.size(1) != final.size(1):
+            # Create 1x1 conv weights on the fly
+            weight = torch.empty(final.size(1), residual.size(
+                1), 1, 1, device=residual.device)
+            torch.nn.init.xavier_uniform_(weight)
+            residual = F.conv2d(residual, weight)
         final = final + residual
         # Flatten all dimensions except batch
         final = final.view(final.size(0), -1)
@@ -129,9 +150,10 @@ class EncoderModel1(nn.Module):
 
         merged = torch.cat(branch_1_outputs, dim=1)
         merged = self.merge_node(merged)
+        chunks = torch.chunk(merged, 4, dim=1)
         branch_2_outputs = []
-        for branch in self.branch_2:
-            branch_2_outputs.append(branch(merged))
+        for i, branch in enumerate(self.branch_2):
+            branch_2_outputs.append(branch(chunks[i]))
         branch_2 = torch.stack(branch_2_outputs, dim=1)
         combined = branch_2.view(branch_2.size(0), -1)
         combined = self.linear1(combined)
