@@ -44,7 +44,7 @@ model:
     - id: MergedNodeConv
       type: merge_node
       params:
-        in_channels: 64
+        in_channels: 64 # This should always be number of branches (8) * out_channels of time + freq layers (8*(4+4)=64)
         out_channels: 32
         kernel_size: 4
         stride: 1
@@ -54,7 +54,7 @@ model:
     - id: SecondaryConv1
       type: secondarylayer
       params:
-        in_channels: 8
+        in_channels: 8 # This should always be merged out_channels divided by number of branches (4)
         out_channels: 4
         kernel_size: 6
         stride: 2

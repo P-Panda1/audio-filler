@@ -14,7 +14,7 @@ model:
     - id: ConvTBlock_1
       type: conv_transpose_layer
       params:
-        in_channels: 16
+        in_channels: 16 # In channels should be multiple of out_channels of previous conv_layer (4*4=16)
         out_channels: 4 
         kernel_size: 7
         stride: 5
@@ -41,6 +41,7 @@ model:
         padding: 1
         activation: LeakyReLU
         batch_norm: True
+# Before Final Conv Layer the layers should alternate between conv_layer and conv_transpose_layer
     - id: FinalConvLayer
       type: final_conv_layer
       params:
