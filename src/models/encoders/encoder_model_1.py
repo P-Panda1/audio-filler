@@ -153,8 +153,7 @@ class EncoderModel1(nn.Module):
         branch_2_outputs = []
         for i, branch in enumerate(self.branch_2):
             branch_2_outputs.append(branch(chunks[i]))
-        branch_2 = torch.stack(branch_2_outputs, dim=0)
-        branch_2 = branch_2.squeeze(2)
+        branch_2 = torch.stack(branch_2_outputs, dim=1)
         combined = branch_2.view(branch_2.size(0), -1)
         combined = self.linear1(combined)
         combined = self.relu(combined)
