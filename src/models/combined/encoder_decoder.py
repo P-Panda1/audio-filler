@@ -19,14 +19,15 @@ device = get_device()
 
 
 class EncoderDecoderModel(nn.Module):
-    def __init__(self, configs, latent_dim=512, class_size=15):
+    def __init__(self, configs, latent_dim=512, class_size=15, device="cpu"):
         super().__init__()
         encoder_config, \
             decoder_config, \
             spectrogram_config, \
             inv_spectrogram_config = configs
-        self.spectrogram = SpectrogramBlock(spectrogram_config)
-        self.inv_spectrogram = InvSpecBlock(inv_spectrogram_config)
+        self.spectrogram = SpectrogramBlock(spectrogram_config, device)
+        self.inv_spectrogram = InvSpecBlock(
+            inv_spectrogram_config, device=device)
         self.encoder = encoder_module.EncoderModel1(encoder_config, latent_dim)
         self.decoder = decoder_module.DecoderModel1(
             decoder_config, latent_dim, class_size)
@@ -46,6 +47,7 @@ class EncoderDecoderModel(nn.Module):
         return recon, class_out, mu, var
 
     def encode(self, x):
+        x = x.to(device)
         spec_dict = self.spectrogram(x)
         freq = spec_dict['freq_spec']
         time = spec_dict['time_spec']
