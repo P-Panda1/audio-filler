@@ -6,7 +6,8 @@ from torchaudio.transforms import Spectrogram, InverseSpectrogram
 class SpectrogramBlock(nn.Module):
     def __init__(
         self,
-        config
+        config,
+        device="cpu"
     ):
         super().__init__()
         n_fft_f, \
@@ -25,7 +26,7 @@ class SpectrogramBlock(nn.Module):
             hop_length=hop_length_f,
             win_length=window_size_f,
             power=None,
-            center=True
+            center=True,
         )
 
         # ---- Time spectrogram ----
@@ -34,7 +35,7 @@ class SpectrogramBlock(nn.Module):
             hop_length=hop_length_t,
             win_length=window_size_t,
             power=None,
-            center=True
+            center=True,
         )
 
         # ---- Reconstruction spectrogram ----
@@ -43,16 +44,24 @@ class SpectrogramBlock(nn.Module):
             hop_length=hop_length_recon,
             win_length=win_length_recon,
             power=None,
-            center=True
+            center=True,
         )
+        # Move internal windows to the correct device if they exist
+        self._move_spec_windows(self.device)
 
-        # ---- Inverse spectrogram ----
-        self.reconspec_to_waveform = InverseSpectrogram(
-            n_fft=n_fft_recon,
-            hop_length=hop_length_recon,
-            win_length=win_length_recon,
-            center=True
-        )
+    def _move_spec_windows(self, device):
+        """Ensures internal window tensors are on the same device."""
+        for spec in [self.to_spec_f, self.to_spec_t, self.recon_to_spec]:
+            if hasattr(spec, "window") and spec.window is not None:
+                spec.window = spec.window.to(device)
+
+    def to(self, device):
+        """Override nn.Module.to() to propagate device to internal Spectrograms."""
+        device = torch.device(device)
+        super().to(device)
+        self._move_spec_windows(device)
+        self.device = device
+        return self
 
     @staticmethod
     def _complex_to_logmag(spec):
@@ -64,6 +73,10 @@ class SpectrogramBlock(nn.Module):
 
     def forward(self, x):
         # x: (B, 1, T)
+        # Move spectrogram windows dynamically if input device changed
+        if x.device != self.device:
+            self._move_spec_windows(x.device)
+            self.device = x.device
         spec_f = self._complex_to_logmag(self.to_spec_f(x))
         spec_t = self._complex_to_logmag(self.to_spec_t(x))
         spec_r = self._complex_to_logmag(self.recon_to_spec(x))
