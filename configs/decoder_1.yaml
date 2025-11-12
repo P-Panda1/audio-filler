@@ -1,5 +1,11 @@
 model:
   name: DecoderModel1
+  notes: >
+    This is Decoder Model 1 configuration file.
+    Design Guidelines:
+    - The layers should alternate between conv_layer and conv_transpose_layer.
+    - in_channels of conv_transpose_layer should be multiple of out_channels of previous conv_layer (e.g., 4*4=16).
+    - Before Final Conv Layer the layers should alternate between conv_layer and conv_transpose_layer.
   blocks:
     - id: ConvBlock_1
       type: conv_layer
