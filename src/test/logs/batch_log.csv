@@ -1,0 +1,1 @@
+epoch,batch,total_loss,recon_loss,kl_loss,class_loss,class_acc

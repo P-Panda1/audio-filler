@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from src.blocks.ConvBlock import ConvBlock
 from functools import reduce
 import operator
@@ -42,6 +43,8 @@ class ConvFirstBranch(nn.Module):
         self.freq_conv = ConvBlock(freq_spec) if freq_spec else None
         self.time_conv = ConvBlock(time_spec) if time_spec else None
 
+        self.residual_conv = nn.Conv2d(3, 8, kernel_size=1, stride=1)
+
     def forward(self, x1, x2):
         out1 = x1
         out2 = x2
@@ -58,9 +61,15 @@ class ConvFirstBranch(nn.Module):
             kernel_size=self.residual_stride,
             stride=self.residual_stride
         )(x2)
+        # Match channels dynamically
+        if residual1.size(1) != out1.size(1):
+            residual1 = self.residual_conv(residual1)
 
-        out1 = x1 + residual1  # Residual connection
-        out2 = x2 + residual2  # Residual connection
+        if residual2.size(1) != out2.size(1):
+            residual2 = self.residual_conv(residual2)
+
+        out1 = out1 + residual1  # Residual connection
+        out2 = out2 + residual2  # Residual connection
 
         freq = self.freq_conv(out1) if self.freq_conv else None
         time = self.time_conv(out2) if self.time_conv else None
@@ -81,20 +90,31 @@ class ConvFinalBranch(nn.Module):
                                       [block_cfg.get("stride", 1)
                                        for block_cfg in secondary_conv_blocks],
                                       1)
+        self.residual_pool = nn.AvgPool2d(
+            kernel_size=self.residual_stride,
+            stride=self.residual_stride
+        )
+        self.residual_conv = nn.Conv2d(
+            in_channels=8,
+            out_channels=2,
+            kernel_size=1,
+            stride=1
+        )
+        self.final_fc_layer = nn.Linear(2000, 250)
 
     def forward(self, x):
         final = x
         for conv in self.conv_blocks:
             final = conv(final)
         # Add Avg Pooling Residual with stride 10 to account for conv downsampling
-        residual = nn.AvgPool2d(
-            kernel_size=self.residual_stride,
-            stride=self.residual_stride
-        )(x).expand(final.size())
+        residual = self.residual_pool(x)
+
+        residual = self.residual_conv(residual)
+
         final = final + residual
         # Flatten all dimensions except batch
         final = final.view(final.size(0), -1)
-        final = nn.Linear(final.size(1), 250)(final)
+        final = self.final_fc_layer(final)
         return final
 
 
@@ -129,9 +149,10 @@ class EncoderModel1(nn.Module):
 
         merged = torch.cat(branch_1_outputs, dim=1)
         merged = self.merge_node(merged)
+        chunks = torch.chunk(merged, 4, dim=1)
         branch_2_outputs = []
-        for branch in self.branch_2:
-            branch_2_outputs.append(branch(merged))
+        for i, branch in enumerate(self.branch_2):
+            branch_2_outputs.append(branch(chunks[i]))
         branch_2 = torch.stack(branch_2_outputs, dim=1)
         combined = branch_2.view(branch_2.size(0), -1)
         combined = self.linear1(combined)

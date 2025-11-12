@@ -125,7 +125,7 @@ def train_model(
                     "Class": f"{class_loss_total / (batch_idx + 1):.4f}",
                     "Acc": f"{total_acc / (batch_idx + 1):.4f}",
                 })
-
+        torch.mps.synchronize()
         print(f"\nEpoch [{epoch+1}/{num_epochs}] Summary:")
         print(f"  Total Loss: {total_loss/len(dataloader):.4f}")
         print(f"  Recon Loss: {recon_loss_total/len(dataloader):.4f}")
