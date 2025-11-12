@@ -13,6 +13,8 @@ class InvSpecBlock(nn.Module):
             hop_length_recon, \
             win_length_recon = config["model"]["blocks"][0]["params"].values()
 
+        self.device = torch.device(device)
+
         # ---- Inverse spectrogram ----
         self.reconspec_to_waveform = InverseSpectrogram(
             n_fft=n_fft_recon,

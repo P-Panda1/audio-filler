@@ -1,5 +1,15 @@
 model:
   name: EncoderModel1
+  notes: >
+    This is Encoder Model 1 configuration file.
+    Design Guidelines:
+    - layer1 blocks are going to be 8 branches in parallel.
+    - squish_freq and squish_time layers should have same dimensions to allow merging.
+    - merge_node block should always have in_channels as number of branches (8) * out_channels of time + freq layers (8*(4+4)=64)
+    - merge_node block should always have out_channels as 32. 
+    - After merge_node the dimensions should be (B, 32, 501, 201)
+    - secondarylayer blocks are 4 parallel branches.
+    - end dimension before final linear layer should have dimension (B, 2, 50, 20)
   blocks:
     - id: ConvLayer
       type: layer1
@@ -45,7 +55,7 @@ model:
       type: merge_node
       params:
         in_channels: 64 # This should always be number of branches (8) * out_channels of time + freq layers (8*(4+4)=64)
-        out_channels: 32
+        out_channels: 32 # Make this 32 always
         kernel_size: 4
         stride: 1
         padding: 1
@@ -54,7 +64,7 @@ model:
     - id: SecondaryConv1
       type: secondarylayer
       params:
-        in_channels: 8 # This should always be merged out_channels divided by number of branches (4)
+        in_channels: 8 # make this 8 always
         out_channels: 4
         kernel_size: 6
         stride: 2
@@ -65,7 +75,7 @@ model:
       type: secondarylayer
       params:
         in_channels: 4
-        out_channels: 2
+        out_channels: 2 # This will be 2 always
         kernel_size: 7
         stride: 5
         padding: 1

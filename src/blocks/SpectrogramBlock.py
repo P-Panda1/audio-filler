@@ -20,6 +20,7 @@ class SpectrogramBlock(nn.Module):
             hop_length_recon, \
             win_length_recon = config["model"]["blocks"][0]["params"].values()
 
+        self.device = torch.device(device)
         # ---- Frequency spectrogram ----
         self.to_spec_f = Spectrogram(
             n_fft=n_fft_f,

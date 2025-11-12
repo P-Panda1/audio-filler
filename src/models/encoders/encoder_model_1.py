@@ -43,6 +43,8 @@ class ConvFirstBranch(nn.Module):
         self.freq_conv = ConvBlock(freq_spec) if freq_spec else None
         self.time_conv = ConvBlock(time_spec) if time_spec else None
 
+        self.residual_conv = nn.Conv2d(3, 8, kernel_size=1, stride=1)
+
     def forward(self, x1, x2):
         out1 = x1
         out2 = x2
@@ -61,17 +63,10 @@ class ConvFirstBranch(nn.Module):
         )(x2)
         # Match channels dynamically
         if residual1.size(1) != out1.size(1):
-            # Create 1x1 conv weights on the fly
-            weight = torch.empty(out1.size(1), residual1.size(
-                1), 1, 1, device=residual1.device)
-            torch.nn.init.xavier_uniform_(weight)
-            residual1 = F.conv2d(residual1, weight)
+            residual1 = self.residual_conv(residual1)
 
         if residual2.size(1) != out2.size(1):
-            weight = torch.empty(out2.size(1), residual2.size(
-                1), 1, 1, device=residual2.device)
-            torch.nn.init.xavier_uniform_(weight)
-            residual2 = F.conv2d(residual2, weight)
+            residual2 = self.residual_conv(residual2)
 
         out1 = out1 + residual1  # Residual connection
         out2 = out2 + residual2  # Residual connection
@@ -95,27 +90,31 @@ class ConvFinalBranch(nn.Module):
                                       [block_cfg.get("stride", 1)
                                        for block_cfg in secondary_conv_blocks],
                                       1)
+        self.residual_pool = nn.AvgPool2d(
+            kernel_size=self.residual_stride,
+            stride=self.residual_stride
+        )
+        self.residual_conv = nn.Conv2d(
+            in_channels=8,
+            out_channels=2,
+            kernel_size=1,
+            stride=1
+        )
+        self.final_fc_layer = nn.Linear(2000, 250)
 
     def forward(self, x):
         final = x
         for conv in self.conv_blocks:
             final = conv(final)
         # Add Avg Pooling Residual with stride 10 to account for conv downsampling
-        residual = nn.AvgPool2d(
-            kernel_size=self.residual_stride,
-            stride=self.residual_stride
-        )(x)
+        residual = self.residual_pool(x)
 
-        if residual.size(1) != final.size(1):
-            # Create 1x1 conv weights on the fly
-            weight = torch.empty(final.size(1), residual.size(
-                1), 1, 1, device=residual.device)
-            torch.nn.init.xavier_uniform_(weight)
-            residual = F.conv2d(residual, weight)
+        residual = self.residual_conv(residual)
+
         final = final + residual
         # Flatten all dimensions except batch
         final = final.view(final.size(0), -1)
-        final = nn.Linear(final.size(1), 250)(final)
+        final = self.final_fc_layer(final)
         return final
 
 
