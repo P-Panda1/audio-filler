@@ -80,16 +80,14 @@ model:
         stride: 5
         padding: 1
         batch_norm: False
-        activation: None
     - id: SecondaryConv4
       type: secondarylayer
       params:
         in_channels: 2
-        out_channels: 1
+        out_channels: 2
         kernel_size: 3
         stride: 1
         padding: 1
         batch_norm: False
-        activation: None
     
     
