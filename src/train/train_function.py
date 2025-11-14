@@ -4,6 +4,8 @@ import torch.optim as optim
 from tqdm import tqdm
 import csv
 import os
+import glob
+import mlflow
 
 
 def train_model(
@@ -16,7 +18,8 @@ def train_model(
     recon_weight=1.0,
     class_weight=1.0,
     log_interval=10,
-    log_dir="logs"
+    log_dir="logs",
+    experiment_name: str = "default_experiment",
 ):
     """
     Train the EncoderDecoderModel on the given dataset.
@@ -44,6 +47,10 @@ def train_model(
     recon_criterion = nn.MSELoss()
     class_criterion = nn.CrossEntropyLoss()
     cos_sim = nn.CosineSimilarity(dim=1)
+
+    # Best model tracking
+    best_acc = -1.0
+    best_model_path = None
 
     for epoch in range(num_epochs):
         model.train()
@@ -131,4 +138,40 @@ def train_model(
         print(f"  Recon Loss: {recon_loss_total/len(dataloader):.4f}")
         print(f"  KL Loss: {kl_loss_total/len(dataloader):.4f}")
         print(f"  Class Loss: {class_loss_total/len(dataloader):.4f}")
-        print(f"  Class Acc: {total_acc/len(dataloader):.4f}")
+        avg_class_acc = total_acc / \
+            len(dataloader) if len(dataloader) > 0 else 0.0
+        print(f"  Class Acc: {avg_class_acc:.4f}")
+
+        # Log metrics to MLflow if an active run exists
+        try:
+            if mlflow.active_run() is not None:
+                mlflow.log_metric("total_loss", total_loss /
+                                  len(dataloader), step=epoch + 1)
+                mlflow.log_metric(
+                    "recon_loss", recon_loss_total / len(dataloader), step=epoch + 1)
+                mlflow.log_metric("kl_loss", kl_loss_total /
+                                  len(dataloader), step=epoch + 1)
+                mlflow.log_metric(
+                    "class_loss", class_loss_total / len(dataloader), step=epoch + 1)
+                mlflow.log_metric("class_acc", avg_class_acc, step=epoch + 1)
+        except Exception:
+            # If mlflow isn't available or logging fails, continue silently
+            pass
+
+        # Check for best model and save checkpoint
+        if avg_class_acc > best_acc:
+            best_acc = avg_class_acc
+            best_model_path = os.path.join(
+                log_dir, f"best_model_{experiment_name}_epoch{epoch+1}.pt")
+            try:
+                torch.save(model.state_dict(), best_model_path)
+                print(
+                    f"💾 New best model saved to {best_model_path} (class_acc={best_acc:.4f})")
+            except Exception as e:
+                print(f"⚠️ Failed to save best model: {e}")
+    # After training: if mlflow active, log best model artifact (if present)
+    try:
+        if mlflow.active_run() is not None and best_model_path is not None:
+            mlflow.log_artifact(best_model_path)
+    except Exception:
+        pass

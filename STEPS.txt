@@ -1,0 +1,44 @@
+Steps to run training on a runpod.io pod using Docker
+
+Prerequisites
+- You have a runpod.io pod with Docker installed and you can SSH into it.
+- You have a GCP service account JSON key file and have uploaded it to the pod (or will mount it).
+- Your GCS bucket contains audio data under the path <bucket>/<prefix> where prefix defaults to "music".
+
+1) Copy repository onto the pod
+- Either git clone this repo on the pod, or build the image locally and scp it. The easiest is to clone:
+    git clone <your-repo-url> ~/audio-filler
+    cd ~/audio-filler
+
+2) Place GCP credentials on the pod
+- Upload your GCP JSON key to the pod, e.g. ~/gcp-creds.json
+- Export the environment variable before running the container:
+    export GOOGLE_APPLICATION_CREDENTIALS="/root/gcp-creds.json"
+
+3) Build the Docker image on the pod
+- From repo root on the pod:
+    docker build -t audio-filler:latest .
+
+4) Run MLflow server (optional inside container)
+- You can run MLflow in the container or use an externally hosted MLflow.
+- To run mlflow in the container and keep it available on port 5000:
+    docker run -d --name mlflow -p 5000:5000 -v $(pwd)/mlruns:/app/mlruns audio-filler:latest sh -c "tools/run_mlflow_server.sh"
+
+5) Run training orchestration
+- If you ran MLflow server separately on the host and exposed it, set --mlflow_uri accordingly.
+- Example run (starts mlflow server in background inside the container as well):
+    docker run --rm -e GOOGLE_APPLICATION_CREDENTIALS="/root/gcp-creds.json" -v /root/gcp-creds.json:/root/gcp-creds.json -v $(pwd)/mlruns:/app/mlruns audio-filler:latest \
+        python tools/orchestrate_training.py --gcs_bucket "gs://your-bucket" --configs default large_model large_encoder large_decoder --epochs 50 --batch_size 32 --run_local_mlflow
+
+6) Inspect logs and models
+- Logs will be saved into the `mlruns` directory mounted on the host (or inside container if not mounted).
+- Best models are saved into the `logs` directory inside the repo; if you mounted the repo as a volume, you'll find them on the host.
+
+7) View MLflow UI
+- Open http://<pod-ip>:5000 in your browser.
+
+Troubleshooting notes
+- If audio decoding fails because of missing codecs, ensure ffmpeg is installed on the pod image.
+- If you face permission errors for GCS, ensure the JSON key is valid and path is set in GOOGLE_APPLICATION_CREDENTIALS.
+- For large datasets, make sure the pod has enough disk and memory; consider using smaller batch sizes.
+
