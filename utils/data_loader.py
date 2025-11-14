@@ -29,24 +29,26 @@ class MusicGenreDataset(Dataset):
         # Precompute clip segments
         self.clips = []
         for audio_file, genre in self.audio_files:
-            # info = torchaudio.info(audio_file)
-            # audio_sample_rate = info.sample_rate
-            # total_samples = info.num_frames
             try:
                 decoder = AudioDecoder(source=audio_file)
                 audio_sample_rate = decoder.metadata.sample_rate
                 total_samples = int(
-                    decoder.metadata.duration_seconds_from_header * audio_sample_rate)
-
+                    decoder.metadata.duration_seconds_from_header * audio_sample_rate
+                )
             except Exception as e:
                 print(f"⚠️ Skipping {audio_file}: {e}")
                 continue
+
+            if total_samples < self.clip_length:
+                print(
+                    f"⚠️ Skipping {audio_file}: too short ({total_samples} samples)")
+                continue
+
             start = 0
             while start < total_samples:
-                # clip_duration in seconds
-                end = start + int(audio_sample_rate * clip_duration)
+                end = start + self.clip_length
                 if end > total_samples:
-                    if total_samples - start >= 10 * sample_rate:  # Check if at least 10s
+                    if total_samples - start >= 10 * self.sample_rate:
                         end = total_samples
                         padding = int(self.clip_length - (end - start))
                         self.clips.append(
@@ -63,11 +65,23 @@ class MusicGenreDataset(Dataset):
         audio_file, start, end, padding, genre = self.clips[idx]
         waveform, sr = torchaudio.load(
             audio_file, frame_offset=int(start), num_frames=int(end-start))
+
+        # skip if waveform is empty
+        if waveform.numel() == 0:
+            raise IndexError(
+                f"Empty waveform for {audio_file} at {start}:{end}")
+
         waveform = torchaudio.functional.resample(waveform, sr, self.sample_rate)[
             0]  # Convert to mono
 
-        if padding > 0:
-            waveform = torch.nn.functional.pad(waveform, (0, padding))
+        target_len = self.clip_length
+        if waveform.size(-1) < target_len:
+            # Pad if too short
+            pad_amt = target_len - waveform.size(-1)
+            waveform = torch.nn.functional.pad(waveform, (0, pad_amt))
+        elif waveform.size(-1) > target_len:
+            # Truncate if too long
+            waveform = waveform[:, :target_len]
 
         # Add channel dimension
         waveform = waveform.unsqueeze(0)

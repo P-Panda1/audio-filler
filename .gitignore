@@ -1,0 +1,12 @@
+# Ignore environment files with secrets
+.env
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+
+# Local MLflow store
+mlruns/
+
+# Logs and checkpoints
+logs/

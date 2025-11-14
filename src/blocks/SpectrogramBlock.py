@@ -66,11 +66,12 @@ class SpectrogramBlock(nn.Module):
 
     @staticmethod
     def _complex_to_logmag(spec):
-        # spec: (B, F, T) complex tensor
+        # spec: (B, 1, F, T) complex tensor
+        spec = spec.squeeze(1)  # remove singleton channel dim → (B, F, T)
         magnitude = torch.abs(spec)
         logmag = 20 * torch.log10(magnitude + 1e-10)
-        return torch.cat([spec.real.unsqueeze(1), spec.imag.unsqueeze(1), logmag.unsqueeze(1)], dim=1)
-        # returns (B, 3, F, T): [real, imag, logmag]
+        # stack along new channel dim: (B, 3, F, T)
+        return torch.stack([spec.real, spec.imag, logmag], dim=1)
 
     def forward(self, x):
         # x: (B, 1, T)

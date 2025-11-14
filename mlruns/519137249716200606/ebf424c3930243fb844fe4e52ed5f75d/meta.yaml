@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/peeyushpatel/Desktop/projects/audio-filler/mlruns/519137249716200606/ebf424c3930243fb844fe4e52ed5f75d/artifacts
+end_time: 1762934951330
+entry_point_name: ''
+experiment_id: '519137249716200606'
+lifecycle_stage: active
+run_id: ebf424c3930243fb844fe4e52ed5f75d
+run_name: lr0.0001_rw1.0_cw0.5_kl0.001
+run_uuid: ebf424c3930243fb844fe4e52ed5f75d
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762934937014
+status: 4
+tags: []
+user_id: peeyushpatel
