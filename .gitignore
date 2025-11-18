@@ -10,3 +10,6 @@ mlruns/
 
 # Logs and checkpoints
 logs/
+
+# Steps and local documentation
+STEPS_RUNPOD.md
