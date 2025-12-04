@@ -42,9 +42,11 @@ class EncoderDecoderModel(nn.Module):
         return self
 
     def forward(self, x):
+        spec_dict = self.spectrogram(x)
         latent, mu, var = self.encode(x)
         recon, _ = self.decode(latent)  # We depricate class_out entirely
-        return recon, mu, var
+
+        return recon, mu, var, spec_dict['recon_spec']
 
     def encode(self, x):
         x = x.to(device)

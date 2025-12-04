@@ -93,9 +93,9 @@ def main():
             from torch.utils.data import random_split
             train_ds, val_ds = random_split(dataset, [train_size, val_size])
             dataloader = DataLoader(
-                train_ds, batch_size=args.batch_size, shuffle=True)
+                train_ds, batch_size=args.batch_size, shuffle=True, pin_memory=True)
             val_dataloader = DataLoader(
-                val_ds, batch_size=args.batch_size, shuffle=False)
+                val_ds, batch_size=args.batch_size, shuffle=False, pin_memory=True)
             print(f"Split dataset: train={train_size}, val={val_size}")
     if val_dataloader is None:
         dataloader = DataLoader(

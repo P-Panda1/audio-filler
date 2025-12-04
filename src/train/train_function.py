@@ -53,7 +53,7 @@ def train_model(
         writer.writerow(["epoch", "batch", "recon_acc", "class_acc"])
 
     # Loss functions
-    model = model.to(device)
+    model = model.to(device).half()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     recon_criterion = nn.MSELoss()
     class_criterion = nn.CrossEntropyLoss()   # (still unused)
@@ -89,19 +89,18 @@ def train_model(
 
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
 
+        accumulation_steps = 25  # You can adjust this value as needed
+
         for batch_idx, (waveform, labels) in enumerate(progress_bar):
             waveform = waveform.to(device)
             labels = labels.to(device)
 
-            optimizer.zero_grad()
+            if (batch_idx + 1) % accumulation_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
 
             # Forward
-            recon, mu, logvar = model(waveform)
-
-            # Spectrogram target
-            with torch.no_grad():
-                freq, _ = model.spectrogram(waveform)
-                target = freq[:, :2, :, :]
+            recon, mu, logvar, target = model(waveform)
 
             # Losses
             recon_loss = recon_criterion(recon, target)
@@ -110,7 +109,6 @@ def train_model(
             loss = recon_weight * recon_loss + beta_kl * kl_loss
 
             loss.backward()
-            optimizer.step()
 
             # Fake class_acc (your class head is not active)
             class_acc = 0.0
