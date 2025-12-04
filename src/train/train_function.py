@@ -25,26 +25,25 @@ def train_model(
     class_weight=1.0,
     log_interval=10,
     log_dir="logs",
-    # Optional: upload best model to GCS after training
     upload_best_to_gcs: bool = False,
+    upload_all_epochs_to_gcs: bool = False,   # <-- NEW
     gcs_bucket: Optional[str] = None,
     gcs_dest_prefix: Optional[str] = None,
-    # Optional: create a tar.gz archive of the logs directory for easy scp/rsync
     create_archive: bool = False,
     archive_path: Optional[str] = None,
 ):
     """
-    Train the EncoderDecoderModel on the given dataset.
-    Creates:
-        - batch_log.csv (per batch)
-        - performance_log.csv (every 10 batches)
+    Train the EncoderDecoderModel.
+    Now supports uploading:
+        - best model only
+        - OR every epoch model
     """
 
     os.makedirs(log_dir, exist_ok=True)
     batch_log_path = os.path.join(log_dir, "batch_log.csv")
     perf_log_path = os.path.join(log_dir, "performance_log.csv")
 
-    # Initialize CSV logs
+    # Init CSV files
     with open(batch_log_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "batch", "total_loss",
@@ -57,20 +56,37 @@ def train_model(
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     recon_criterion = nn.MSELoss()
-    class_criterion = nn.CrossEntropyLoss()
+    class_criterion = nn.CrossEntropyLoss()   # (still unused)
     cos_sim = nn.CosineSimilarity(dim=1)
 
-    import tarfile
-    from datetime import datetime
-
-    # Best model tracking
     best_acc = -1.0
     best_model_path = None
 
+    # ---- Helper: Upload file to GCS ----
+    def upload_to_gcs(local_path: str, dest_name: str):
+        if storage is None:
+            print("GCS upload requested but google-cloud-storage not installed.")
+            return
+        if not gcs_bucket:
+            print("GCS bucket not provided; skipping upload.")
+            return
+        try:
+            client = storage.Client()
+            bucket = client.bucket(gcs_bucket)
+            blob = bucket.blob(dest_name)
+            blob.upload_from_filename(local_path)
+            print(f"Uploaded to gs://{gcs_bucket}/{dest_name}")
+        except Exception as e:
+            print(f"GCS upload failed: {e}")
+
+    # =============================================
+    # TRAINING LOOP
+    # =============================================
     for epoch in range(num_epochs):
         model.train()
-        total_loss, recon_loss_total, kl_loss_total, class_loss_total = 0, 0, 0, 0
-        total_acc = 0
+        total_loss = recon_loss_total = kl_loss_total = 0.0
+        total_acc = 0.0
+
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
 
         for batch_idx, (waveform, labels) in enumerate(progress_bar):
@@ -78,165 +94,104 @@ def train_model(
             labels = labels.to(device)
 
             optimizer.zero_grad()
-            recon, class_out, mu, logvar = model(waveform)
 
-            # --- Spectrogram Target ---
+            # Forward
+            recon, mu, logvar = model(waveform)
+
+            # Spectrogram target
             with torch.no_grad():
                 freq, _ = model.spectrogram(waveform)
                 target = freq[:, :2, :, :]
 
-            # --- Loss Components ---
+            # Losses
             recon_loss = recon_criterion(recon, target)
             kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-            class_loss = class_criterion(class_out, labels)
 
-            # --- Total Loss ---
-            loss = (
-                recon_weight * recon_loss
-                + beta_kl * kl_loss
-                + class_weight * class_loss
-            )
+            loss = recon_weight * recon_loss + beta_kl * kl_loss
 
             loss.backward()
             optimizer.step()
 
-            # --- Classification Accuracy ---
-            preds = class_out.argmax(dim=1)
-            class_acc = (preds == labels).float().mean().item()
+            # Fake class_acc (your class head is not active)
+            class_acc = 0.0
 
-            # --- Reconstruction Accuracy (cosine sim) ---
             with torch.no_grad():
                 recon_flat = recon.flatten(start_dim=1)
                 target_flat = target.flatten(start_dim=1)
                 recon_acc = cos_sim(recon_flat, target_flat).mean().item()
 
-            # --- Logging ---
+            # logs
             total_loss += loss.item()
             recon_loss_total += recon_loss.item()
             kl_loss_total += kl_loss.item()
-            class_loss_total += class_loss.item()
             total_acc += class_acc
 
-            # Update batch log
             with open(batch_log_path, "a", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    epoch + 1,
-                    batch_idx + 1,
-                    loss.item(),
-                    recon_loss.item(),
-                    kl_loss.item(),
-                    class_loss.item(),
+                csv.writer(f).writerow([
+                    epoch + 1, batch_idx + 1,
+                    loss.item(), recon_loss.item(), kl_loss.item(),
                     class_acc
                 ])
 
-            # Performance log every 10 batches
+            # perf log
             if batch_idx % log_interval == 0:
                 with open(perf_log_path, "a", newline="") as f:
-                    writer = csv.writer(f)
-                    writer.writerow([
-                        epoch + 1,
-                        batch_idx + 1,
-                        recon_acc,
-                        class_acc
+                    csv.writer(f).writerow([
+                        epoch + 1, batch_idx + 1, recon_acc, class_acc
                     ])
-                progress_bar.set_postfix({
-                    "Total": f"{total_loss / (batch_idx + 1):.4f}",
-                    "Recon": f"{recon_loss_total / (batch_idx + 1):.4f}",
-                    "KL": f"{kl_loss_total / (batch_idx + 1):.4f}",
-                    "Class": f"{class_loss_total / (batch_idx + 1):.4f}",
-                    "Acc": f"{total_acc / (batch_idx + 1):.4f}",
-                })
-        # Device-specific synchronization (best-effort)
-        try:
-            if device and "cuda" in device and torch.cuda.is_available():
-                torch.cuda.synchronize()
-            elif device == "mps" and hasattr(torch, "mps"):
-                torch.mps.synchronize()
-        except Exception:
-            pass
 
-        print(f"\nEpoch [{epoch+1}/{num_epochs}] Summary:")
-        n_batches = len(dataloader) if len(dataloader) > 0 else 1
-        print(f"  Total Loss: {total_loss/n_batches:.4f}")
-        print(f"  Recon Loss: {recon_loss_total/n_batches:.4f}")
-        print(f"  KL Loss: {kl_loss_total/n_batches:.4f}")
-        print(f"  Class Loss: {class_loss_total/n_batches:.4f}")
-        avg_class_acc = total_acc / n_batches
-        print(f"  Class Acc: {avg_class_acc:.4f}")
+        # END OF EPOCH
+        n_batches = len(dataloader)
+        epoch_acc = total_acc / max(1, n_batches)
 
-        # Run validation if provided
-        if val_dataloader is not None:
-            try:
-                model.eval()
-                val_total_acc = 0.0
-                val_recon_total = 0.0
-                val_batches = 0
-                with torch.no_grad():
-                    for v_waveform, v_labels in val_dataloader:
-                        v_waveform = v_waveform.to(device)
-                        v_labels = v_labels.to(device)
-                        v_recon, v_class_out, v_mu, v_logvar = model(
-                            v_waveform)
-                        # spectrogram target
-                        freq, _ = model.spectrogram(v_waveform)
-                        target = freq[:, :2, :, :]
-                        v_recon_loss = recon_criterion(v_recon, target)
-                        preds = v_class_out.argmax(dim=1)
-                        v_class_acc = (preds == v_labels).float().mean().item()
-                        val_total_acc += v_class_acc
-                        val_recon_total += v_recon_loss.item()
-                        val_batches += 1
-                if val_batches > 0:
-                    val_acc = val_total_acc / val_batches
-                    val_recon = val_recon_total / val_batches
-                    print(
-                        f"\nValidation: Recon Loss: {val_recon:.4f} | Class Acc: {val_acc:.4f}")
-            except Exception as e:
-                print(f"Validation run failed: {e}")
+        print(f"Epoch {epoch+1}: avg_acc={epoch_acc:.4f}")
 
-        # Save best model by class accuracy
-        if avg_class_acc > best_acc:
-            best_acc = avg_class_acc
-            best_model_path = os.path.join(
-                log_dir, f"best_model_epoch{epoch+1}.pt")
-            try:
-                torch.save(model.state_dict(), best_model_path)
-                print(
-                    f"Saved best model to {best_model_path} (class_acc={best_acc:.4f})")
-            except Exception as e:
-                print(f"Failed to save best model: {e}")
+        # ------------------------------------------------
+        # (A) SAVE LOCAL WEIGHTS FOR THIS EPOCH
+        # ------------------------------------------------
+        epoch_model_path = os.path.join(log_dir, f"model_epoch{epoch+1}.pt")
+        torch.save(model.state_dict(), epoch_model_path)
+        print(f"Saved epoch model to {epoch_model_path}")
 
-    # After training: optionally upload best model to GCS
+        # ------------------------------------------------
+        # (B) UPLOAD THIS EPOCH TO GCS (optional)
+        # ------------------------------------------------
+        if upload_all_epochs_to_gcs:
+            dest_name = (
+                f"{gcs_dest_prefix.rstrip('/')}/epoch_{epoch+1}.pt"
+                if gcs_dest_prefix else f"epoch_{epoch+1}.pt"
+            )
+            upload_to_gcs(epoch_model_path, dest_name)
+
+        # ------------------------------------------------
+        # (C) TRACK BEST MODEL
+        # ------------------------------------------------
+        if epoch_acc > best_acc:
+            best_acc = epoch_acc
+            best_model_path = os.path.join(log_dir, "best_model.pt")
+            torch.save(model.state_dict(), best_model_path)
+            print("Updated BEST model.")
+
+    # END TRAINING LOOP
+
+    # ------------------------------------------------
+    # (D) UPLOAD BEST MODEL
+    # ------------------------------------------------
     if upload_best_to_gcs and best_model_path is not None:
-        if storage is None:
-            print("google-cloud-storage is not installed; cannot upload to GCS.")
-        elif not gcs_bucket:
-            print("gcs_bucket not provided; skipping upload to GCS.")
-        else:
-            try:
-                client = storage.Client()
-                bucket = client.bucket(gcs_bucket)
-                dest_prefix = gcs_dest_prefix.rstrip(
-                    '/') if gcs_dest_prefix else ''
-                dest_blob = f"{dest_prefix}/{os.path.basename(best_model_path)}" if dest_prefix else os.path.basename(
-                    best_model_path)
-                blob = bucket.blob(dest_blob)
-                blob.upload_from_filename(best_model_path)
-                print(f"Uploaded best model to gs://{gcs_bucket}/{dest_blob}")
-            except Exception as e:
-                print(f"Failed to upload best model to GCS: {e}")
+        dest_name = (
+            f"{gcs_dest_prefix.rstrip('/')}/best_model.pt"
+            if gcs_dest_prefix else "best_model.pt"
+        )
+        upload_to_gcs(best_model_path, dest_name)
 
-    # Optionally create an archive of the logs directory for easy download
+    # ------------------------------------------------
+    # (E) Create archive if needed
+    # ------------------------------------------------
     if create_archive:
-        try:
-            timestamp = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-            default_archive = os.path.join(os.path.dirname(
-                log_dir), f"logs_archive_{timestamp}.tar.gz")
-            out_path = archive_path if archive_path else default_archive
-            with tarfile.open(out_path, "w:gz") as tar:
-                # add the entire log_dir
-                tar.add(log_dir, arcname=os.path.basename(log_dir))
-            print(f"Created archive of logs at: {out_path}")
-        except Exception as e:
-            print(f"Failed to create archive of logs: {e}")
+        import tarfile
+        from datetime import datetime
+        ts = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+        out_path = archive_path or f"logs_archive_{ts}.tar.gz"
+        with tarfile.open(out_path, "w:gz") as tar:
+            tar.add(log_dir, arcname=os.path.basename(log_dir))
+        print(f"Created logs archive: {out_path}")

@@ -19,7 +19,7 @@ device = get_device()
 
 
 class EncoderDecoderModel(nn.Module):
-    def __init__(self, configs, latent_dim=512, class_size=15, device="cpu"):
+    def __init__(self, configs, latent_dim=1024, class_size=15, device="cpu"):
         super().__init__()
         encoder_config, \
             decoder_config, \
@@ -43,8 +43,8 @@ class EncoderDecoderModel(nn.Module):
 
     def forward(self, x):
         latent, mu, var = self.encode(x)
-        recon, class_out = self.decode(latent)
-        return recon, class_out, mu, var
+        recon, _ = self.decode(latent)  # We depricate class_out entirely
+        return recon, mu, var
 
     def encode(self, x):
         x = x.to(device)
@@ -56,8 +56,8 @@ class EncoderDecoderModel(nn.Module):
         return latent, mu, var
 
     def decode(self, latent):
-        recon, class_out = self.decoder(latent)
-        return recon, class_out
+        recon, _ = self.decoder(latent)
+        return recon
 
     def generate(self, latent):
         recon, _ = self.decoder(latent)

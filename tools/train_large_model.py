@@ -33,8 +33,10 @@ sys.path.insert(0, str(ROOT))
 def parse_args():
     p = argparse.ArgumentParser(
         description="Train large_model configuration on GCS data (no MLflow)")
-    p.add_argument("--gcs-bucket", required=True,
+    p.add_argument("--data-bucket", required=True,
                    help="GCS bucket path (e.g. gs://my-bucket)")
+    p.add_argument("--model-bucket", default=None,
+                   help="GCS bucket to upload best model(e.g. gs: // my-bucket)")
     p.add_argument("--service-account", default=None,
                    help="Path to GCP JSON key to export as GOOGLE_APPLICATION_CREDENTIALS")
     p.add_argument("--epochs", type=int, default=50)
@@ -76,7 +78,7 @@ def main():
 
     # Build dataset and dataloader
     print("Building dataset from GCS... this may take a moment")
-    dataset = MusicGenreDataset(args.gcs_bucket, prefix="music",
+    dataset = MusicGenreDataset(args.data_bucket, prefix="music",
                                 clip_duration=args.clip_duration, sample_rate=args.sample_rate)
 
     # Split into train/val if requested
@@ -123,8 +125,8 @@ def main():
             log_dir=args.log_dir,
             experiment_name="large_model",
             upload_best_to_gcs=args.upload_best_to_gcs,
-            gcs_bucket=(args.gcs_bucket.replace('gs://', '')
-                        if args.gcs_bucket else None),
+            gcs_bucket=(args.model_bucket.replace('gs://', '')
+                        if args.model_bucket else None),
             gcs_dest_prefix=args.gcs_dest_prefix,
             create_archive=args.create_archive,
             archive_path=args.archive_path,
