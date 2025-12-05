@@ -92,7 +92,7 @@ def train_model(
         accumulation_steps = 25  # You can adjust this value as needed
 
         for batch_idx, (waveform, labels) in enumerate(progress_bar):
-            waveform = waveform.to(device)
+            waveform = waveform.to(device).half()
             labels = labels.to(device)
 
             if (batch_idx + 1) % accumulation_steps == 0:

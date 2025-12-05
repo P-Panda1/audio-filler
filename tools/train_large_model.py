@@ -16,7 +16,8 @@ Note: run this on the runpod host directly (no Docker) where Python and dependen
 """
 from src.train.train_function import train_model
 from src.models.combined.encoder_decoder import EncoderDecoderModel
-from utils.data_loader_gcs import MusicGenreDataset
+# from utils.data_loader_gcs import MusicGenreDataset
+from utils.data_loader import MusicGenreDataset
 from utils.load_all_configs import load_all_configs
 from torch.utils.data import DataLoader
 import torch
@@ -73,13 +74,19 @@ def main():
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = sa_path
         print(f"Using GOOGLE_APPLICATION_CREDENTIALS={sa_path}")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "mps"
     print(f"Using device: {device}")
 
     # Build dataset and dataloader
-    print("Building dataset from GCS... this may take a moment")
-    dataset = MusicGenreDataset(args.data_bucket, prefix="music",
-                                clip_duration=args.clip_duration, sample_rate=args.sample_rate)
+    # print("Building dataset from GCS... this may take a moment")
+    # dataset = MusicGenreDataset(args.data_bucket, prefix="music",
+    #                             clip_duration=args.clip_duration, sample_rate=args.sample_rate)
+    dataset = MusicGenreDataset(
+        data_dir="/Users/peeyushpatel/data/project/music",
+        clip_duration=args.clip_duration,  # seconds
+        stride=1,          # seconds
+        sample_rate=args.sample_rate
+    )
 
     # Split into train/val if requested
     val_dataloader = None
@@ -123,13 +130,12 @@ def main():
             class_weight=args.class_weight,
             log_interval=10,
             log_dir=args.log_dir,
-            experiment_name="large_model",
             upload_best_to_gcs=args.upload_best_to_gcs,
             gcs_bucket=(args.model_bucket.replace('gs://', '')
                         if args.model_bucket else None),
             gcs_dest_prefix=args.gcs_dest_prefix,
             create_archive=args.create_archive,
-            archive_path=args.archive_path,
+            archive_path=args.archive_path
         )
     except KeyboardInterrupt:
         print("Training interrupted by user")

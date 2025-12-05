@@ -19,7 +19,8 @@ class MusicGenreDataset(Dataset):
         self.stride = stride * sample_rate
 
         # List all mp3 files in GCS
-        all_files = self.fs.ls(f"{bucket_name}/{prefix}")
+        all_files = self.fs.glob(f"{bucket_name}/{prefix}/**/*.mp3")
+
         self.audio_files = [f for f in all_files if f.endswith(".mp3")]
 
         # Extract genre names from path

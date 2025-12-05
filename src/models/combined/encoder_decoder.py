@@ -44,7 +44,7 @@ class EncoderDecoderModel(nn.Module):
     def forward(self, x):
         spec_dict = self.spectrogram(x)
         latent, mu, var = self.encode(x)
-        recon, _ = self.decode(latent)  # We depricate class_out entirely
+        recon = self.decode(latent)  # We depricate class_out entirely
 
         return recon, mu, var, spec_dict['recon_spec']
 
@@ -58,7 +58,7 @@ class EncoderDecoderModel(nn.Module):
         return latent, mu, var
 
     def decode(self, latent):
-        recon, _ = self.decoder(latent)
+        recon = self.decoder(latent)
         return recon
 
     def generate(self, latent):

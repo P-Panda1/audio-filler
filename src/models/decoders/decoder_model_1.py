@@ -45,23 +45,24 @@ class DecoderModel1(nn.Module):
               for conv_layer, trans_layer in pair_blocks])
         self.final_layer = ConvBlock(final_block)
 
-        self.activation = nn.ReLU()
-        self.mid_dim = (latent_dim // 4) * 3
-        self.classifier = nn.Sequential(
-            nn.Linear(latent_dim, self.mid_dim),
-            nn.ReLU(),
-            nn.Linear(self.mid_dim, class_size)
-        )
+        # self.activation = nn.ReLU()
+        # self.mid_dim = (latent_dim // 4) * 3
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(latent_dim, self.mid_dim),
+        #     nn.ReLU(),
+        #     nn.Linear(self.mid_dim, class_size)
+        # )
 
-        self.softmax = nn.Softmax(dim=1)
+        # self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
         out = self.Linear1(x)
-        recon = out.unsqueeze(1).unsqueeze(1)  # (B, 1, 1, 4000)
+        # reshape to (batch, channels, height, width)
+        recon = out.reshape(-1, 1, 100, 40)
         for layer in self.transpose_layers:
             recon = layer(recon)
         recon = self.final_layer(recon)
 
-        class_out = self.classifier(x)
-        class_out = self.softmax(class_out)
-        return recon, class_out
+        # class_out = self.classifier(x)
+        # class_out = self.softmax(class_out)
+        return recon
