@@ -16,8 +16,8 @@ Note: run this on the runpod host directly (no Docker) where Python and dependen
 """
 from src.train.train_function import train_model
 from src.models.combined.encoder_decoder import EncoderDecoderModel
-# from utils.data_loader_gcs import MusicGenreDataset
-from utils.data_loader import MusicGenreDataset
+from utils.data_loader_gcs import MusicGenreDataset
+# from utils.data_loader import MusicGenreDataset
 from utils.load_all_configs import load_all_configs
 from torch.utils.data import DataLoader
 import torch

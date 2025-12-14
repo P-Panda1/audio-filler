@@ -26,6 +26,15 @@ echo "Transferring service account to pod..."
 scp -P "$POD_PORT" -i "$SSH_KEY" "$GCP_SERVICE_ACCOUNT_PATH" \
     root@"$POD_HOST":/root/service_account.json
 
+# -----------------------------------------------------
+# Prepare Boolean Flags
+# -----------------------------------------------------
+# If the env var is "true", set the flag string. Otherwise leave it empty.
+if [ "$UPLOAD_BEST_TO_GCS" = "true" ]; then
+    UPLOAD_ARG="--upload-best-to-gcs"
+else
+    UPLOAD_ARG=""
+fi
 
 # -----------------------------------------------------
 # SSH and run training
@@ -37,18 +46,22 @@ set -e
 
 apt update && apt install -y git
 
+apt remove -y python3-blinker || true
+
 if [ ! -d "$REPO_NAME" ]; then
     git clone "$GITHUB_REPO_URL"
 fi
 
 cd "$REPO_NAME"
 
+pip install -r requirements.txt --break-system-packages
+
 git checkout master
 git pull origin master
 
 export GOOGLE_APPLICATION_CREDENTIALS=/root/service_account.json
 
-PYTHONPATH=$(pwd)
+export PYTHONPATH=.
 
 python3 tools/train_large_model.py \
     --data-bucket "$DATA_BUCKET" \
@@ -60,7 +73,7 @@ python3 tools/train_large_model.py \
     --val-split "$VAL_SPLIT" \
     --clip-duration "$CLIP_DURATION" \
     --sample-rate "$SAMPLE_RATE" \
-    --upload-best-to-gcs "$UPLOAD_BEST_TO_GCS" \
     --gcs-dest-prefix "$GCS_DEST_PREFIX" \
-    --log-dir "$LOG_DIR"
+    --log-dir "$LOG_DIR" \
+    $UPLOAD_ARG
 EOF
