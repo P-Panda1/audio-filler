@@ -83,6 +83,11 @@ class MusicGenreDataset(Dataset):
 
         waveform = self.current_waveform[:, start:end]
 
+        # FIX 1: Force Mono (Average over channels if stereo)
+        # If shape is (2, L), mean(dim=0) -> (L,) -> unsqueeze(0) -> (1, L)
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+
         # Resample if needed
         if self.current_sr != self.sample_rate:
             waveform = torchaudio.functional.resample(
@@ -95,7 +100,7 @@ class MusicGenreDataset(Dataset):
         elif waveform.size(-1) > self.clip_length:
             waveform = waveform[:, :self.clip_length]
 
-        waveform = waveform.unsqueeze(0)
+        # waveform = waveform.unsqueeze(0)
         label = self.genre_to_idx[genre]
 
         return waveform, label
