@@ -75,13 +75,22 @@ class SpectrogramBlock(nn.Module):
 
     def forward(self, x):
         # x: (B, 1, T)
+
         # Move spectrogram windows dynamically if input device changed
         if x.device != self.device:
             self._move_spec_windows(x.device)
             self.device = x.device
-        spec_f = self._complex_to_logmag(self.to_spec_f(x))
-        spec_t = self._complex_to_logmag(self.to_spec_t(x))
-        spec_r = self._complex_to_logmag(self.recon_to_spec(x))
+
+        # FIX: Disable mixed precision (FP16) for this block only.
+        # This allows cuFFT to handle non-power-of-2 sizes (like 4000) without crashing.
+        with torch.amp.autocast('cuda', enabled=False):
+            # 1. Force input to Float32
+            x = x.float()
+
+            # 2. Run STFT and LogMag in safe Float32
+            spec_f = self._complex_to_logmag(self.to_spec_f(x))
+            spec_t = self._complex_to_logmag(self.to_spec_t(x))
+            spec_r = self._complex_to_logmag(self.recon_to_spec(x))
 
         return {
             "freq_spec": spec_f,
