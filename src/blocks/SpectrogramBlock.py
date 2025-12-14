@@ -93,7 +93,7 @@ class SpectrogramBlock(nn.Module):
             spec_r = self._complex_to_logmag(self.recon_to_spec(x))
 
         return {
-            "freq_spec": spec_f,
-            "time_spec": spec_t,
-            "recon_spec": spec_r
+            "freq_spec": spec_f.half(),
+            "time_spec": spec_t.half(),
+            "recon_spec": spec_r.half()
         }
