@@ -68,8 +68,8 @@ class MusicGenreDataset(Dataset):
 
         # skip if waveform is empty
         if waveform.numel() == 0:
-            raise IndexError(
-                f"Empty waveform for {audio_file} at {start}:{end}")
+            target_len = self.clip_length
+            waveform = torch.zeros((1, target_len))
 
         waveform = torchaudio.functional.resample(waveform, sr, self.sample_rate)[
             0]  # Convert to mono

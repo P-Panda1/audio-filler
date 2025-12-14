@@ -102,6 +102,8 @@ def train_model(
             # Forward
             recon, mu, logvar, target = model(waveform)
 
+            target = target[:, 0:2, :, :]
+
             # Losses
             recon_loss = recon_criterion(recon, target)
             kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())

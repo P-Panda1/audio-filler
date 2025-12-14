@@ -78,15 +78,15 @@ def main():
     print(f"Using device: {device}")
 
     # Build dataset and dataloader
-    # print("Building dataset from GCS... this may take a moment")
-    # dataset = MusicGenreDataset(args.data_bucket, prefix="music",
-    #                             clip_duration=args.clip_duration, sample_rate=args.sample_rate)
-    dataset = MusicGenreDataset(
-        data_dir="/Users/peeyushpatel/data/project/music",
-        clip_duration=args.clip_duration,  # seconds
-        stride=1,          # seconds
-        sample_rate=args.sample_rate
-    )
+    print("Building dataset from GCS... this may take a moment")
+    dataset = MusicGenreDataset(args.data_bucket, prefix="music",
+                                clip_duration=args.clip_duration, sample_rate=args.sample_rate)
+    # dataset = MusicGenreDataset(
+    #     data_dir="/Users/peeyushpatel/data/project/music",
+    #     clip_duration=args.clip_duration,  # seconds
+    #     stride=1,          # seconds
+    #     sample_rate=args.sample_rate
+    # )
 
     # Split into train/val if requested
     val_dataloader = None

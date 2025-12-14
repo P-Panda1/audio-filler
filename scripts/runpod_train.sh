@@ -48,6 +48,8 @@ git pull origin master
 
 export GOOGLE_APPLICATION_CREDENTIALS=/root/service_account.json
 
+PYTHONPATH=$(pwd)
+
 python3 tools/train_large_model.py \
     --data-bucket "$DATA_BUCKET" \
     --model-bucket "$MODEL_BUCKET" \

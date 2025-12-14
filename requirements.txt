@@ -3,6 +3,10 @@ torch==2.9.0
 torchaudio==2.9.0
 torchcodec==0.8.1  # Latest available version compatible with torch 2.9.0
 
+# Fast API
+fastapi
+uvicorn
+
 # Numerical / Data
 numpy>=1.26.0,<2.0
 pandas>=2.2.0,<3.0

@@ -9,13 +9,13 @@ from io import BytesIO
 
 
 class MusicGenreDataset(Dataset):
-    def __init__(self, bucket_name, prefix="music", clip_duration=15, stride=1, sample_rate=16000):
+    def __init__(self, bucket_name, prefix="music", clip_duration=15, stride=1, sample_rate=16000, sample_length=240000):
         self.fs = gcsfs.GCSFileSystem(
             token=os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
         self.bucket_name = bucket_name
         self.prefix = prefix
         self.sample_rate = sample_rate
-        self.clip_length = clip_duration * sample_rate
+        self.clip_length = sample_length  # clip_duration * sample_rate
         self.stride = stride * sample_rate
 
         # List all mp3 files in GCS
