@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.cuda.amp import autocast, GradScaler  # Import AMP
 from tqdm import tqdm
 import csv
 import os
@@ -26,37 +27,35 @@ def train_model(
     log_interval=10,
     log_dir="logs",
     upload_best_to_gcs: bool = False,
-    upload_all_epochs_to_gcs: bool = False,   # <-- NEW
+    upload_all_epochs_to_gcs: bool = False,
     gcs_bucket: Optional[str] = None,
     gcs_dest_prefix: Optional[str] = None,
     create_archive: bool = False,
     archive_path: Optional[str] = None,
+    accumulation_steps: int = 25  # Moved to arg for clarity
 ):
-    """
-    Train the EncoderDecoderModel.
-    Now supports uploading:
-        - best model only
-        - OR every epoch model
-    """
-
     os.makedirs(log_dir, exist_ok=True)
     batch_log_path = os.path.join(log_dir, "batch_log.csv")
     perf_log_path = os.path.join(log_dir, "performance_log.csv")
 
-    # Init CSV files
-    with open(batch_log_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["epoch", "batch", "total_loss",
-                        "recon_loss", "kl_loss", "class_loss", "class_acc"])
-    with open(perf_log_path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["epoch", "batch", "recon_acc", "class_acc"])
+    # Initialize Logs
+    for path in [batch_log_path, perf_log_path]:
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+            # Headers adapted slightly for clarity
+            if "batch" in path:
+                writer.writerow(
+                    ["epoch", "batch", "loss", "recon_loss", "kl_loss"])
+            else:
+                writer.writerow(["epoch", "batch", "recon_acc", "class_acc"])
 
-    # Loss functions
-    model = model.to(device).half()
+    # Setup Model & AMP
+    # Keep model in FP32 initially, let AMP handle casting
+    model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    scaler = GradScaler()  # For Mixed Precision
+
     recon_criterion = nn.MSELoss()
-    class_criterion = nn.CrossEntropyLoss()   # (still unused)
     cos_sim = nn.CosineSimilarity(dim=1)
 
     best_acc = -1.0
@@ -64,129 +63,119 @@ def train_model(
 
     # ---- Helper: Upload file to GCS ----
     def upload_to_gcs(local_path: str, dest_name: str):
-        if storage is None:
-            print("GCS upload requested but google-cloud-storage not installed.")
-            return
-        if not gcs_bucket:
-            print("GCS bucket not provided; skipping upload.")
-            return
-        try:
-            client = storage.Client()
-            bucket = client.bucket(gcs_bucket)
-            blob = bucket.blob(dest_name)
-            blob.upload_from_filename(local_path)
-            print(f"Uploaded to gs://{gcs_bucket}/{dest_name}")
-        except Exception as e:
-            print(f"GCS upload failed: {e}")
+        if storage and gcs_bucket:
+            try:
+                bucket = storage.Client().bucket(gcs_bucket)
+                blob = bucket.blob(dest_name)
+                blob.upload_from_filename(local_path)
+                print(f"Uploaded to gs://{gcs_bucket}/{dest_name}")
+            except Exception as e:
+                print(f"GCS upload failed: {e}")
 
-    # =============================================
-    # TRAINING LOOP
-    # =============================================
+    print(f"Starting training on {device} with AMP enabled...")
+
     for epoch in range(num_epochs):
         model.train()
-        total_loss = recon_loss_total = kl_loss_total = 0.0
-        total_acc = 0.0
+
+        # Open log file ONCE per epoch to reduce I/O overhead
+        batch_log_file = open(batch_log_path, "a", newline="")
+        batch_writer = csv.writer(batch_log_file)
+
+        # Performance logging often happens less frequently, can keep separate or open/close
+        perf_log_file = open(perf_log_path, "a", newline="")
+        perf_writer = csv.writer(perf_log_file)
+
+        # Trackers for average epoch metrics
+        running_recon_acc = 0.0
+        running_loss = 0.0
+
+        optimizer.zero_grad()  # Initialize gradients once
 
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
 
-        accumulation_steps = 25  # You can adjust this value as needed
-
         for batch_idx, (waveform, labels) in enumerate(progress_bar):
-            waveform = waveform.to(device).half()
-            labels = labels.to(device)
+            # Non-blocking transfer if pin_memory=True in dataloader
+            waveform = waveform.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+
+            # --- Mixed Precision Context ---
+            with autocast():
+                recon, mu, logvar, target = model(waveform)
+                target = target[:, 0:2, :, :]
+
+                recon_loss = recon_criterion(recon, target)
+                kl_loss = -0.5 * \
+                    torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+
+                loss = recon_weight * recon_loss + beta_kl * kl_loss
+
+                # Normalize loss for gradient accumulation to keep magnitude consistent
+                loss = loss / accumulation_steps
+
+            # --- Backward & Optimizer Step ---
+            scaler.scale(loss).backward()
 
             if (batch_idx + 1) % accumulation_steps == 0:
-                optimizer.step()
+                scaler.step(optimizer)
+                scaler.update()
                 optimizer.zero_grad()
 
-            # Forward
-            recon, mu, logvar, target = model(waveform)
+            # --- Logging Logic (Optimized) ---
+            # We multiply loss back by accumulation_steps strictly for logging display
+            current_loss_val = loss.item() * accumulation_steps
 
-            target = target[:, 0:2, :, :]
+            # Buffer write to CSV (OS handles buffering, but avoiding open() is key)
+            batch_writer.writerow([
+                epoch + 1, batch_idx + 1,
+                f"{current_loss_val:.4f}",
+                f"{recon_loss.item():.4f}",
+                f"{kl_loss.item():.4f}"
+            ])
 
-            # Losses
-            recon_loss = recon_criterion(recon, target)
-            kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-
-            loss = recon_weight * recon_loss + beta_kl * kl_loss
-
-            loss.backward()
-
-            # Fake class_acc (your class head is not active)
-            class_acc = 0.0
-
-            with torch.no_grad():
-                recon_flat = recon.flatten(start_dim=1)
-                target_flat = target.flatten(start_dim=1)
-                recon_acc = cos_sim(recon_flat, target_flat).mean().item()
-
-            # logs
-            total_loss += loss.item()
-            recon_loss_total += recon_loss.item()
-            kl_loss_total += kl_loss.item()
-            total_acc += class_acc
-
-            with open(batch_log_path, "a", newline="") as f:
-                csv.writer(f).writerow([
-                    epoch + 1, batch_idx + 1,
-                    loss.item(), recon_loss.item(), kl_loss.item(),
-                    class_acc
-                ])
-
-            # perf log
+            # Calculate heavy metrics LESS frequently
             if batch_idx % log_interval == 0:
-                with open(perf_log_path, "a", newline="") as f:
-                    csv.writer(f).writerow([
-                        epoch + 1, batch_idx + 1, recon_acc, class_acc
+                with torch.no_grad():
+                    # Compute cosine similarity
+                    recon_flat = recon.flatten(start_dim=1)
+                    target_flat = target.flatten(start_dim=1)
+                    recon_acc = cos_sim(recon_flat, target_flat).mean().item()
+
+                    running_recon_acc += recon_acc
+
+                    perf_writer.writerow([
+                        epoch + 1, batch_idx + 1, f"{recon_acc:.4f}", 0.0
                     ])
 
-        # END OF EPOCH
-        n_batches = len(dataloader)
-        epoch_acc = total_acc / max(1, n_batches)
+                    # Update progress bar occasionally, not every step
+                    progress_bar.set_postfix(
+                        {"Loss": f"{current_loss_val:.3f}", "RecAcc": f"{recon_acc:.3f}"})
 
-        print(f"Epoch {epoch+1}: avg_acc={epoch_acc:.4f}")
+        # Close file handles at end of epoch
+        batch_log_file.close()
+        perf_log_file.close()
 
-        # ------------------------------------------------
-        # (A) SAVE LOCAL WEIGHTS FOR THIS EPOCH
-        # ------------------------------------------------
+        # Calculate epoch average for BEST model logic
+        # Note: This is a rough average based on log_interval samples
+        epoch_acc = running_recon_acc / (len(dataloader) / log_interval)
+
+        print(f"Epoch {epoch+1} Complete. Approx Acc: {epoch_acc:.4f}")
+
+        # --- Saving & Uploading (unchanged logic) ---
         epoch_model_path = os.path.join(log_dir, f"model_epoch{epoch+1}.pt")
         torch.save(model.state_dict(), epoch_model_path)
-        print(f"Saved epoch model to {epoch_model_path}")
 
-        # ------------------------------------------------
-        # (B) UPLOAD THIS EPOCH TO GCS (optional)
-        # ------------------------------------------------
         if upload_all_epochs_to_gcs:
-            dest_name = (
-                f"{gcs_dest_prefix.rstrip('/')}/epoch_{epoch+1}.pt"
-                if gcs_dest_prefix else f"epoch_{epoch+1}.pt"
-            )
+            dest_name = f"{gcs_dest_prefix.rstrip('/')}/epoch_{epoch+1}.pt" if gcs_dest_prefix else f"epoch_{epoch+1}.pt"
             upload_to_gcs(epoch_model_path, dest_name)
 
-        # ------------------------------------------------
-        # (C) TRACK BEST MODEL
-        # ------------------------------------------------
         if epoch_acc > best_acc:
             best_acc = epoch_acc
             best_model_path = os.path.join(log_dir, "best_model.pt")
             torch.save(model.state_dict(), best_model_path)
-            print("Updated BEST model.")
+            if upload_best_to_gcs:
+                dest_name = f"{gcs_dest_prefix.rstrip('/')}/best_model.pt" if gcs_dest_prefix else "best_model.pt"
+                upload_to_gcs(best_model_path, dest_name)
 
-    # END TRAINING LOOP
-
-    # ------------------------------------------------
-    # (D) UPLOAD BEST MODEL
-    # ------------------------------------------------
-    if upload_best_to_gcs and best_model_path is not None:
-        dest_name = (
-            f"{gcs_dest_prefix.rstrip('/')}/best_model.pt"
-            if gcs_dest_prefix else "best_model.pt"
-        )
-        upload_to_gcs(best_model_path, dest_name)
-
-    # ------------------------------------------------
-    # (E) Create archive if needed
-    # ------------------------------------------------
     if create_archive:
         import tarfile
         from datetime import datetime
