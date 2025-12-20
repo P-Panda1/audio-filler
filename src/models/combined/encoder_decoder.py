@@ -19,7 +19,7 @@ device = get_device()
 
 
 class EncoderDecoderModel(nn.Module):
-    def __init__(self, configs, latent_dim=1024, class_size=15, device="cpu"):
+    def __init__(self, configs, latent_dim=1024, class_size=15, device="cpu", mode="default"):
         super().__init__()
         encoder_config, \
             decoder_config, \
@@ -31,6 +31,8 @@ class EncoderDecoderModel(nn.Module):
         self.encoder = encoder_module.EncoderModel1(encoder_config, latent_dim)
         self.decoder = decoder_module.DecoderModel1(
             decoder_config, latent_dim, class_size)
+        # default mode accepts waveform, train mode accepts dict with the spectogram dictionary already given
+        self.mode = mode
 
     def to(self, device):
         super().to(device)
@@ -42,7 +44,10 @@ class EncoderDecoderModel(nn.Module):
         return self
 
     def forward(self, x):
-        spec_dict = self.spectrogram(x)
+        if self.mode == "default":
+            spec_dict = self.spectrogram(x)
+        elif self.mode == "train":
+            spec_dict = x
         latent, mu, var = self.encode(x)
         recon = self.decode(latent)  # We depricate class_out entirely
 
@@ -50,7 +55,10 @@ class EncoderDecoderModel(nn.Module):
 
     def encode(self, x):
         x = x.to(device)
-        spec_dict = self.spectrogram(x)
+        if self.mode == "default":
+            spec_dict = self.spectrogram(x)
+        elif self.mode == "train":
+            spec_dict = x
         freq = spec_dict['freq_spec']
         time = spec_dict['time_spec']
         mu, var = self.encoder(freq, time)
