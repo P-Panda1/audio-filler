@@ -54,10 +54,12 @@ fi
 
 cd "$REPO_NAME"
 
-pip install -r requirements.txt --break-system-packages
-
 git checkout master
 git pull origin master
+
+pip install -r requirements.txt --break-system-packages
+
+
 
 export GOOGLE_APPLICATION_CREDENTIALS=/root/service_account.json
 
