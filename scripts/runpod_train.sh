@@ -63,6 +63,19 @@ export GOOGLE_APPLICATION_CREDENTIALS=/root/service_account.json
 
 export PYTHONPATH=.
 
+# -----------------------------------------------------
+# Download dataset if not present
+# -----------------------------------------------------
+if [ ! -d "$LOCAL_DATA_DIR/music" ]; then
+    echo "Downloading dataset from GCS..."
+    python3 tools/download_gcs_music.py \
+        --gcs-bucket "$DATA_BUCKET" \
+        --prefix music \
+        --out-dir "$LOCAL_DATA_DIR"
+else
+    echo "Dataset already present at $LOCAL_DATA_DIR/music — skipping download."
+fi
+
 python3 tools/train_large_model.py \
     --data-bucket "$DATA_BUCKET" \
     --model-bucket "$MODEL_BUCKET" \
@@ -75,5 +88,6 @@ python3 tools/train_large_model.py \
     --sample-rate "$SAMPLE_RATE" \
     --gcs-dest-prefix "$GCS_DEST_PREFIX" \
     --log-dir "$LOG_DIR" \
+    --local-data-dir "$LOCAL_DATA_DIR" \
     $UPLOAD_ARG
 EOF

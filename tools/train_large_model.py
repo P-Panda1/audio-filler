@@ -16,8 +16,8 @@ Note: run this on the runpod host directly (no Docker) where Python and dependen
 """
 from src.train.train_function import train_model
 from src.models.combined.encoder_decoder import EncoderDecoderModel
-from utils.data_loader_gcs import MusicGenreDataset
-# from utils.data_loader import MusicGenreDataset
+# from utils.data_loader_gcs import MusicGenreDataset
+from utils.data_loader import MusicGenreDataset
 from utils.load_all_configs import load_all_configs
 from torch.utils.data import DataLoader
 import torch
@@ -60,6 +60,11 @@ def parse_args():
                    help="Upload the best model to GCS after training (requires google-cloud-storage and a bucket)")
     p.add_argument("--gcs-dest-prefix", default=None,
                    help="Destination prefix inside the GCS bucket where the best model will be uploaded")
+    p.add_argument(
+        "--local-data-dir",
+        default=None,
+        help="Local dataset root (e.g. /mnt/data). If set, use local files instead of GCS."
+    )
     return p.parse_args()
 
 
@@ -77,16 +82,22 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "mps"
     print(f"Using device: {device}")
 
-    # Build dataset and dataloader
-    print("Building dataset from GCS... this may take a moment")
-    dataset = MusicGenreDataset(args.data_bucket, prefix="music",
-                                clip_duration=args.clip_duration, sample_rate=args.sample_rate)
-    # dataset = MusicGenreDataset(
-    #     data_dir="/Users/peeyushpatel/data/project/music",
-    #     clip_duration=args.clip_duration,  # seconds
-    #     stride=1,          # seconds
-    #     sample_rate=args.sample_rate
-    # )
+    # # Build dataset and dataloader
+    # print("Building dataset from GCS... this may take a moment")
+    # dataset = MusicGenreDataset(args.data_bucket, prefix="music",
+    #                             clip_duration=args.clip_duration, sample_rate=args.sample_rate)
+    if args.local_data_dir:
+        dataset = MusicGenreDataset(
+            data_dir=f"{args.local_data_dir}/music",
+            clip_duration=args.clip_duration,
+            stride=1,
+            sample_rate=args.sample_rate,
+        )
+
+    else:
+        raise ValueError(
+            "--local-data-dir must be provided when using local dataset loader"
+        )
 
     # Split into train/val if requested
     val_dataloader = None
