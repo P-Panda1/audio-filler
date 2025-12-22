@@ -103,7 +103,7 @@ class MusicGenreDataset(Dataset):
 
             # 3. Calculate Indices (Seconds -> Native Samples)
             native_sr = self.current_sr
-            start_sec = clip_idx * self.stride_sec
+            start_sec = clip_idx * self.stride
             start_native = int(start_sec * native_sr)
             end_native = int((start_sec + self.clip_duration) * native_sr)
 
