@@ -88,7 +88,7 @@ def main():
     #                             clip_duration=args.clip_duration, sample_rate=args.sample_rate)
     if args.local_data_dir:
         dataset = MusicGenreDataset(
-            data_dir=f"{args.local_data_dir}/music",
+            data_dir=f"{args.local_data_dir}/audio-filler-1/music",
             clip_duration=args.clip_duration,
             stride=1,
             sample_rate=args.sample_rate,

@@ -66,7 +66,7 @@ export PYTHONPATH=.
 # -----------------------------------------------------
 # Download dataset if not present
 # -----------------------------------------------------
-if [ ! -d "$LOCAL_DATA_DIR/music" ]; then
+if [ ! -d "$LOCAL_DATA_DIR/audio-filler-1/music" ]; then
     echo "Downloading dataset from GCS..."
     python3 tools/download_gcs_music.py \
         --gcs-bucket "$DATA_BUCKET" \
