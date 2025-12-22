@@ -66,63 +66,89 @@ class MusicGenreDataset(Dataset):
         return sum(num_clips for _, _, num_clips in self.clip_map)
 
     def __getitem__(self, idx):
-        # 2. LAZY INITIALIZATION (The Fix)
-        # If this is a worker process, self.fs will be None initially.
-        # We create a fresh connection here, which is safe inside the worker.
+        # 1. Lazy Init for Worker Processes
         if self.fs is None:
             self.fs = gcsfs.GCSFileSystem(
                 token=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
 
-        # Find which file and which clip
+        # Find which file and clip corresponds to this index
         cum = 0
         target_entry = None
-
-        # Optimization: You might want to binary search this if clip_map is huge
         for entry in self.clip_map:
-            audio_path, total_samples, num_clips = entry
+            audio_path, duration_sec, num_clips = entry
             if idx < cum + num_clips:
                 target_entry = entry
                 break
             cum += num_clips
-        else:
-            raise IndexError(f"Index {idx} out of range")
 
-        audio_path, total_samples, num_clips = target_entry
+        # Safety fallback if index logic fails
+        if target_entry is None:
+            return self._get_random_valid_sample()
+
+        audio_path, _, _ = target_entry
         clip_idx = idx - cum
-        start = clip_idx * self.stride
-        end = min(start + self.clip_length, total_samples)
         genre = Path(audio_path).parts[-2]
 
-        # Load audio file if not cached
-        # Note: In multi-worker setup, this cache works per-worker.
-        if self.current_file != audio_path:
-            with self.fs.open(audio_path, "rb") as f:
-                audio_bytes = f.read()
-            audio_stream = BytesIO(audio_bytes)
-            waveform, sr = torchaudio.load(audio_stream)
-            self.current_file = audio_path
-            self.current_waveform = waveform
-            self.current_sr = sr
+        try:
+            # 2. Load Audio (Cached)
+            if self.current_file != audio_path:
+                with self.fs.open(audio_path, "rb") as f:
+                    audio_bytes = f.read()
+                audio_stream = BytesIO(audio_bytes)
+                waveform, sr = torchaudio.load(audio_stream)
 
-        # Slicing the cached waveform
-        waveform = self.current_waveform[:, start:end]
+                self.current_file = audio_path
+                self.current_waveform = waveform
+                self.current_sr = sr
 
-        # Force Mono
-        if waveform.shape[0] > 1:
-            waveform = torch.mean(waveform, dim=0, keepdim=True)
+            # 3. Calculate Indices (Seconds -> Native Samples)
+            native_sr = self.current_sr
+            start_sec = clip_idx * self.stride_sec
+            start_native = int(start_sec * native_sr)
+            end_native = int((start_sec + self.clip_duration) * native_sr)
 
-        # Resample
-        if self.current_sr != self.sample_rate:
-            waveform = torchaudio.functional.resample(
-                waveform, self.current_sr, self.sample_rate)
+            # 4. CRITICAL CHECK: Is the file actually shorter than the metadata claimed?
+            # If the slice is out of bounds, the file is truncated/corrupt.
+            if start_native >= self.current_waveform.size(-1):
+                raise ValueError(f"File truncated: {audio_path}")
 
-        # Pad or trim
-        if waveform.size(-1) < self.clip_length:
-            pad_amt = self.clip_length - waveform.size(-1)
-            waveform = torch.nn.functional.pad(waveform, (0, pad_amt))
-        elif waveform.size(-1) > self.clip_length:
-            waveform = waveform[:, :self.clip_length]
+            # Slice raw audio
+            waveform = self.current_waveform[:, start_native:end_native]
 
-        label = self.genre_to_idx[genre]
+            # 5. Check for Empty/Zero-length Tensor BEFORE Resampling
+            if waveform.numel() == 0 or waveform.size(-1) == 0:
+                raise ValueError(f"Empty slice extracted from {audio_path}")
 
-        return waveform, label
+            # 6. Process Audio
+            # Force Mono
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+            # Resample
+            if native_sr != self.target_sr:
+                waveform = torchaudio.functional.resample(
+                    waveform, native_sr, self.target_sr)
+
+            # Pad if slightly short after resampling
+            if waveform.size(-1) < self.target_len:
+                pad_amt = self.target_len - waveform.size(-1)
+                waveform = torch.nn.functional.pad(waveform, (0, pad_amt))
+            elif waveform.size(-1) > self.target_len:
+                waveform = waveform[:, :self.target_len]
+
+            label = self.genre_to_idx[genre]
+            return waveform, label
+
+        except Exception as e:
+            # === THE SKIP LOGIC ===
+            # Instead of returning zeros, we pick a random new index and try again.
+            print(
+                f"⚠️ Bad clip at index {idx} ({audio_path}): {e}. Retrying with new sample...")
+            return self._get_random_valid_sample()
+
+    def _get_random_valid_sample(self):
+        import random
+        # Pick a random index and recursively call __getitem__
+        # We limit recursion depth implicitly by hoping the dataset isn't 100% corrupt.
+        new_idx = random.randint(0, len(self) - 1)
+        return self.__getitem__(new_idx)
