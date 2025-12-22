@@ -1,154 +1,160 @@
 import os
+import random
 from pathlib import Path
+from io import BytesIO
+
 import torch
 from torch.utils.data import Dataset
 import torchaudio
 import gcsfs
 from torchcodec.decoders import AudioDecoder
-from io import BytesIO
 
 
 class MusicGenreDataset(Dataset):
-    def __init__(self, bucket_name, prefix="music", clip_duration=15, stride=1, sample_rate=16000, sample_length=240000):
-        # 1. Setup local FS just for the metadata scan (don't save to self.fs!)
-        #    We use this temporarily to map the dataset in the main process.
-        temp_fs = gcsfs.GCSFileSystem(
-            token=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
-
+    def __init__(
+        self,
+        bucket_name,
+        prefix="music",
+        clip_duration=15,     # seconds
+        stride=1,             # seconds
+        sample_rate=16000,
+    ):
+        # ===== config =====
         self.bucket_name = bucket_name
         self.prefix = prefix
-        self.sample_rate = sample_rate
-        self.clip_length = sample_length
-        self.stride = stride * sample_rate
+        self.clip_duration = clip_duration
+        self.stride_sec = stride
+        self.target_sr = sample_rate
+        self.target_len = int(clip_duration * sample_rate)
 
-        # Important: Initialize the worker's FS handle to None
+        # worker-local fs (lazy init)
         self.fs = None
 
-        print("Scanning GCS for files (this may take a while)...")
+        # ===== scan metadata (main process only) =====
+        temp_fs = gcsfs.GCSFileSystem(
+            token=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        )
+
+        print("Scanning GCS for files...")
         all_files = temp_fs.glob(f"{bucket_name}/{prefix}/**/*.mp3")
         self.audio_files = [f for f in all_files if f.endswith(".mp3")]
 
-        self.genres = sorted(
-            list({Path(f).parts[-2] for f in self.audio_files}))
-        self.genre_to_idx = {genre: idx for idx,
-                             genre in enumerate(self.genres)}
+        self.genres = sorted({Path(f).parts[-2] for f in self.audio_files})
+        self.genre_to_idx = {g: i for i, g in enumerate(self.genres)}
 
+        # clip_map entries:
+        # (audio_path, total_samples, num_clips, genre_idx)
         self.clip_map = []
 
-        # Use the temporary FS for the initialization scan
         for audio_path in self.audio_files:
             try:
                 with temp_fs.open(audio_path, "rb") as f:
-                    # Note: We are using torchcodec here to peek at headers quickly
                     decoder = AudioDecoder(source=f)
-                    audio_sample_rate = decoder.metadata.sample_rate
+                    sr = decoder.metadata.sample_rate
                     total_samples = int(
-                        decoder.metadata.duration_seconds_from_header * audio_sample_rate)
-            except Exception as e:
-                print(f"⚠️ Skipping {audio_path}: {e}")
+                        decoder.metadata.duration_seconds_from_header * sr
+                    )
+            except Exception:
                 continue
 
-            if total_samples < self.clip_length:
+            if total_samples < self.target_len:
                 continue
 
+            stride_samples = int(self.stride_sec * sr)
             num_clips = max(
-                1, (total_samples - self.clip_length) // self.stride + 1)
-            self.clip_map.append((audio_path, total_samples, num_clips))
+                1, (total_samples - self.target_len) // stride_samples + 1
+            )
 
-        # Reset cache vars
+            genre = Path(audio_path).parts[-2]
+            genre_idx = self.genre_to_idx[genre]
+
+            self.clip_map.append(
+                (audio_path, total_samples, num_clips, genre_idx)
+            )
+
+        # prefix sums for O(1) indexing
+        self.cum_clips = []
+        total = 0
+        for _, _, n, _ in self.clip_map:
+            total += n
+            self.cum_clips.append(total)
+
+        # per-worker cache
         self.current_file = None
         self.current_waveform = None
         self.current_sr = None
 
-        print(f"Dataset ready. Found {len(self.clip_map)} valid files.")
+        print(f"Dataset ready. {len(self.clip_map)} files, {len(self)} clips.")
 
     def __len__(self):
-        return sum(num_clips for _, _, num_clips in self.clip_map)
+        return self.cum_clips[-1] if self.cum_clips else 0
 
-    def __getitem__(self, idx):
-        # 1. Lazy Init for Worker Processes
+    def _init_fs(self):
         if self.fs is None:
             self.fs = gcsfs.GCSFileSystem(
-                token=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
+                token=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+            )
 
-        # Find which file and clip corresponds to this index
-        cum = 0
-        target_entry = None
-        for entry in self.clip_map:
-            audio_path, duration_sec, num_clips = entry
-            if idx < cum + num_clips:
-                target_entry = entry
-                break
-            cum += num_clips
+    def __getitem__(self, idx):
+        for _ in range(5):  # bounded retry
+            try:
+                return self._get_item(idx)
+            except Exception:
+                idx = random.randint(0, len(self) - 1)
 
-        # Safety fallback if index logic fails
-        if target_entry is None:
-            return self._get_random_valid_sample()
+        raise RuntimeError("Too many corrupt samples")
 
-        audio_path, _, _ = target_entry
-        clip_idx = idx - cum
-        genre = Path(audio_path).parts[-2]
+    def _get_item(self, idx):
+        self._init_fs()
 
-        try:
-            # 2. Load Audio (Cached)
-            if self.current_file != audio_path:
-                with self.fs.open(audio_path, "rb") as f:
-                    audio_bytes = f.read()
-                audio_stream = BytesIO(audio_bytes)
-                waveform, sr = torchaudio.load(audio_stream)
+        # locate file via prefix sums
+        file_idx = next(
+            i for i, c in enumerate(self.cum_clips) if idx < c
+        )
+        prev = 0 if file_idx == 0 else self.cum_clips[file_idx - 1]
+        clip_idx = idx - prev
 
-                self.current_file = audio_path
-                self.current_waveform = waveform
-                self.current_sr = sr
+        audio_path, _, _, label = self.clip_map[file_idx]
 
-            # 3. Calculate Indices (Seconds -> Native Samples)
-            native_sr = self.current_sr
-            start_sec = clip_idx * self.stride
-            start_native = int(start_sec * native_sr)
-            end_native = int((start_sec + self.clip_duration) * native_sr)
+        # load + cache file
+        if self.current_file != audio_path:
+            with self.fs.open(audio_path, "rb") as f:
+                audio_bytes = f.read()
+            waveform, sr = torchaudio.load(BytesIO(audio_bytes))
 
-            # 4. CRITICAL CHECK: Is the file actually shorter than the metadata claimed?
-            # If the slice is out of bounds, the file is truncated/corrupt.
-            if start_native >= self.current_waveform.size(-1):
-                raise ValueError(f"File truncated: {audio_path}")
+            self.current_file = audio_path
+            self.current_waveform = waveform
+            self.current_sr = sr
 
-            # Slice raw audio
-            waveform = self.current_waveform[:, start_native:end_native]
+        native_sr = self.current_sr
+        stride_samples = int(self.stride_sec * native_sr)
 
-            # 5. Check for Empty/Zero-length Tensor BEFORE Resampling
-            if waveform.numel() == 0 or waveform.size(-1) == 0:
-                raise ValueError(f"Empty slice extracted from {audio_path}")
+        start = clip_idx * stride_samples
+        end = start + int(self.clip_duration * native_sr)
 
-            # 6. Process Audio
-            # Force Mono
-            if waveform.shape[0] > 1:
-                waveform = torch.mean(waveform, dim=0, keepdim=True)
+        if start >= self.current_waveform.size(-1):
+            raise ValueError("Truncated file")
 
-            # Resample
-            if native_sr != self.target_sr:
-                waveform = torchaudio.functional.resample(
-                    waveform, native_sr, self.target_sr)
+        waveform = self.current_waveform[:, start:end]
 
-            # Pad if slightly short after resampling
-            if waveform.size(-1) < self.target_len:
-                pad_amt = self.target_len - waveform.size(-1)
-                waveform = torch.nn.functional.pad(waveform, (0, pad_amt))
-            elif waveform.size(-1) > self.target_len:
-                waveform = waveform[:, :self.target_len]
+        if waveform.numel() == 0:
+            raise ValueError("Empty slice")
 
-            label = self.genre_to_idx[genre]
-            return waveform, label
+        # mono
+        if waveform.size(0) > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
 
-        except Exception as e:
-            # === THE SKIP LOGIC ===
-            # Instead of returning zeros, we pick a random new index and try again.
-            print(
-                f"⚠️ Bad clip at index {idx} ({audio_path}): {e}. Retrying with new sample...")
-            return self._get_random_valid_sample()
+        # resample
+        if native_sr != self.target_sr:
+            waveform = torchaudio.functional.resample(
+                waveform, native_sr, self.target_sr
+            )
 
-    def _get_random_valid_sample(self):
-        import random
-        # Pick a random index and recursively call __getitem__
-        # We limit recursion depth implicitly by hoping the dataset isn't 100% corrupt.
-        new_idx = random.randint(0, len(self) - 1)
-        return self.__getitem__(new_idx)
+        # pad / crop
+        if waveform.size(-1) < self.target_len:
+            pad = self.target_len - waveform.size(-1)
+            waveform = torch.nn.functional.pad(waveform, (0, pad))
+        else:
+            waveform = waveform[:, :self.target_len]
+
+        return waveform, label
