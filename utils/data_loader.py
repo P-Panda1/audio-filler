@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 import torchaudio
-from torchcodec.decoders import AudioDecoder
+# from torchcodec.decoders import AudioDecoder
 
 
 class MusicGenreDataset(Dataset):
@@ -30,11 +30,15 @@ class MusicGenreDataset(Dataset):
         self.clips = []
         for audio_file, genre in self.audio_files:
             try:
-                decoder = AudioDecoder(source=audio_file)
-                audio_sample_rate = decoder.metadata.sample_rate
-                total_samples = int(
-                    decoder.metadata.duration_seconds_from_header * audio_sample_rate
-                )
+                info = torchaudio.info(audio_file)
+                audio_sample_rate = info.sample_rate
+                total_samples = info.num_frames
+
+                # decoder = AudioDecoder(source=audio_file)
+                # audio_sample_rate = decoder.metadata.sample_rate
+                # total_samples = int(
+                #     decoder.metadata.duration_seconds_from_header * audio_sample_rate
+                # )
             except Exception as e:
                 print(f"⚠️ Skipping {audio_file}: {e}")
                 continue
