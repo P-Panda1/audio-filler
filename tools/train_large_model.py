@@ -124,6 +124,12 @@ def main():
     # Instantiate model
     model = EncoderDecoderModel(configs).to(device)
 
+    #
+    if torch.cuda.device_count() > 1:
+        print(
+            f"🚀 Detected {torch.cuda.device_count()} GPUs! Using DataParallel.")
+        model = torch.nn.DataParallel(model)
+
     # Speed up training
     model = torch.compile(model)
 
