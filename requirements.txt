@@ -23,7 +23,7 @@ mutagen>=1.47.0
 
 # Experiment Tracking
 mlflow>=2.15.0,<3.0
- Optional but Recommended (FFmpeg codecs support)
+# Optional but Recommended (FFmpeg codecs support)
 ffmpeg-python>=0.2.0
 
 # Google CLoud
