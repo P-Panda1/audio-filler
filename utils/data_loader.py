@@ -30,7 +30,7 @@ class MusicGenreDataset(Dataset):
         self.clips = []
         for audio_file, genre in self.audio_files:
             try:
-                info = torchaudio.info(audio_file)
+                info = torchaudio.backend.sox_io_backend.info(audio_file)
                 audio_sample_rate = info.sample_rate
                 total_samples = info.num_frames
 
