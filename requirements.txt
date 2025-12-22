@@ -1,7 +1,9 @@
 # Core Torch Stack
-torch==2.9.0
-torchaudio==2.9.0
-torchcodec==0.8.1  # Latest available version compatible with torch 2.9.0
+# torch==2.9.0
+# torchaudio==2.9.0
+# torchcodec==0.8.1  # Latest available version compatible with torch 2.9.0
+torch==2.8.0
+torchaudio==2.8.0
 
 # # Fast API
 # fastapi
@@ -21,8 +23,7 @@ mutagen>=1.47.0
 
 # Experiment Tracking
 mlflow>=2.15.0,<3.0
-
-# Optional but Recommended (FFmpeg + codecs support)
+ Optional but Recommended (FFmpeg codecs support)
 ffmpeg-python>=0.2.0
 
 # Google CLoud
