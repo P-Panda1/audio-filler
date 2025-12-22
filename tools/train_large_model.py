@@ -102,16 +102,16 @@ def main():
             dataloader = DataLoader(
                 train_ds, batch_size=args.batch_size, shuffle=True, pin_memory=True,
                 # Comment this if trying out locally
-                num_workers=4,      # Critical: Set to 2 or 4 per GPU
+                num_workers=16,      # Critical: Set to 2 or 4 per GPU
                 # pin_memory=True,    # Critical: Speeds up .to('cuda')
-                prefetch_factor=2   # Optional: Preloads batches
+                prefetch_factor=4   # Optional: Preloads batches
             )
             val_dataloader = DataLoader(
                 val_ds, batch_size=args.batch_size, shuffle=False, pin_memory=True,
                 # Comment this if trying out locally
-                num_workers=4,      # Critical: Set to 2 or 4 per GPU
+                num_workers=16,      # Critical: Set to 2 or 4 per GPU
                 # pin_memory=True,    # Critical: Speeds up .to('cuda')
-                prefetch_factor=2   # Optional: Preloads batches
+                prefetch_factor=4   # Optional: Preloads batches
             )
             print(f"Split dataset: train={train_size}, val={val_size}")
     if val_dataloader is None:
