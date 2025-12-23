@@ -61,6 +61,11 @@ class EncoderDecoderModel(nn.Module):
             spec_dict = x
         freq = spec_dict['freq_spec']
         time = spec_dict['time_spec']
+        # For data parallelisation
+        if freq.dim() == 5:
+            freq = freq.squeeze(0)
+        if time.dim() == 5:
+            time = time.squeeze(0)
         mu, var = self.encoder(freq, time)
         latent = self.encoder.reparameterize(mu, var)
         return latent, mu, var
