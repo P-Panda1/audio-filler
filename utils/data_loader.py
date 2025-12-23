@@ -1,9 +1,28 @@
+import numpy as np
+import soundfile as sf
 import os
 from pathlib import Path
 import torch
 from torch.utils.data import Dataset
 import torchaudio
 # from torchcodec.decoders import AudioDecoder
+
+torchaudio.set_audio_backend("ffmpeg")
+
+
+def load_audio(path, target_sr):
+    try:
+        audio, sr = sf.read(path, dtype="float32", always_2d=True)
+    except RuntimeError as e:
+        raise RuntimeError(f"SoundFile failed on {path}: {e}")
+
+    # audio shape: [T, C] → [C, T]
+    audio = torch.from_numpy(audio.T)
+
+    if sr != target_sr:
+        audio = torchaudio.functional.resample(audio, sr, target_sr)
+
+    return audio, target_sr
 
 
 class MusicGenreDataset(Dataset):
@@ -44,7 +63,9 @@ class MusicGenreDataset(Dataset):
             #     continue
 
             try:
-                waveform, audio_sample_rate = torchaudio.load(audio_file)
+                waveform, audio_sample_rate = load_audio(
+                    audio_file, self.sample_rate)
+
                 total_samples = waveform.shape[-1]
             except Exception as e:
                 print(f"⚠️ Skipping {audio_file}: {e}")
