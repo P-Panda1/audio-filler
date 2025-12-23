@@ -91,13 +91,19 @@ class EncoderDecoderModel(nn.Module):
     def decode(self, latent, freq_max=None, time_max=None):
         recon = self.decoder(latent)
         if freq_max is not None and time_max is not None:
-            # flatten per-channel max values
-            B, C, _, _ = recon.shape
-            # shape [B*C, 2] for feeding into MLP
-            scale_input = torch.stack([freq_max.squeeze(-1).squeeze(-1),
-                                       time_max.squeeze(-1).squeeze(-1)], dim=-1).view(-1, 2)
-            scale = self.scale_mlp(scale_input)  # shape [B*C, 1]
-            scale = scale.view(B, C, 1, 1)
+            # Reduce encoder channels
+            freq_scale = freq_max.mean(dim=1)  # [B, 1, 1]
+            time_scale = time_max.mean(dim=1)  # [B, 1, 1]
+
+            # Prepare MLP input
+            scale_input = torch.stack(
+                [freq_scale.squeeze(-1), time_scale.squeeze(-1)],
+                dim=-1
+            )  # [B, 2]
+
+            scale = self.scale_mlp(scale_input)  # [B, 1]
+            scale = scale.view(-1, 1, 1, 1)      # [B, 1, 1, 1]
+
             recon = recon * scale
         return recon
 
