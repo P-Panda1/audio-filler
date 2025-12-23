@@ -43,7 +43,7 @@ class ConvFirstBranch(nn.Module):
         self.freq_conv = ConvBlock(freq_spec) if freq_spec else None
         self.time_conv = ConvBlock(time_spec) if time_spec else None
 
-        # self.residual_conv = nn.Conv2d(3, 8, kernel_size=1, stride=1)
+        self.residual_conv = nn.Conv2d(3, 8, kernel_size=1, stride=1)
 
     def forward(self, x1, x2):
         # Remove the erroneous singleton dimension
@@ -67,8 +67,6 @@ class ConvFirstBranch(nn.Module):
             kernel_size=self.residual_stride,
             stride=self.residual_stride
         )(x2)
-        if self.residual_conv is None:
-            self.residual_conv = nn.Conv2d(x1.size(1), 8, kernel_size=1)
 
         # Match channels dynamically
         if residual1.size(1) != out1.size(1):
