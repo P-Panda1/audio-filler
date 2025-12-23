@@ -46,13 +46,13 @@ class ConvFirstBranch(nn.Module):
         # self.residual_conv = nn.Conv2d(3, 8, kernel_size=1, stride=1)
 
     def forward(self, x1, x2):
+        # Remove the erroneous singleton dimension
+        if x1.dim() == 5 and x1.size(2) == 1:
+            x1 = x1.squeeze(2)
+        if x2.dim() == 5 and x2.size(2) == 1:
+            x2 = x2.squeeze(2)
         out1 = x1
         out2 = x2
-        # Remove the erroneous singleton dimension
-        if out1.dim() == 5 and out1.size(2) == 1:
-            out1 = out1.squeeze(2)  # removes the 1 at dim=2
-        if out2.dim() == 5 and out2.size(2) == 1:
-            out2 = out2.squeeze(2)
 
         for conv in self.conv_blocks:
             out1 = conv(out1)
