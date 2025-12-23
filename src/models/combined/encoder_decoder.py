@@ -33,6 +33,9 @@ class EncoderDecoderModel(nn.Module):
             decoder_config, latent_dim, class_size)
         # default mode accepts waveform, train mode accepts dict with the spectogram dictionary already given
         self.mode = mode
+        self.scale_mlp = nn.Sequential(
+            nn.Linear(2, 1),  # input: [freq_max, time_max] -> output: [scale]
+        )
 
     def to(self, device):
         super().to(device)
@@ -48,34 +51,58 @@ class EncoderDecoderModel(nn.Module):
             spec_dict = self.spectrogram(x)
         elif self.mode == "train":
             spec_dict = x
-        latent, mu, var = self.encode(x)
-        recon = self.decode(latent)  # We depricate class_out entirely
+        latent, mu, var, freq_max, time_max = self.encode(x)
+        # We depricate class_out entirely
+        recon = self.decode(latent, freq_max, time_max)
 
         return recon, mu, var, spec_dict['recon_spec']
 
     def encode(self, x):
         x = x.to(device)
+
         if self.mode == "default":
             spec_dict = self.spectrogram(x)
         elif self.mode == "train":
             spec_dict = x
+
         freq = spec_dict['freq_spec']
         time = spec_dict['time_spec']
+
         # For data parallelisation
         if freq.dim() == 5:
             freq = freq.squeeze(2)
         if time.dim() == 5:
             time = time.squeeze(2)
-        mu, var = self.encoder(freq, time)
-        latent = self.encoder.reparameterize(mu, var)
-        return latent, mu, var
 
-    def decode(self, latent):
+        # --- Per-channel normalization ---
+        # Compute max per sample & channel
+        freq_max = freq.abs().amax(
+            dim=[2, 3], keepdim=True)  # shape [B, C, 1, 1]
+        time_max = time.abs().amax(
+            dim=[2, 3], keepdim=True)  # shape [B, C, 1, 1]
+
+        freq_norm = freq / (freq_max + 1e-8)
+        time_norm = time / (time_max + 1e-8)
+
+        mu, var = self.encoder(freq_norm, time_norm)
+        latent = self.encoder.reparameterize(mu, var)
+        return latent, mu, var, freq_max, time_max
+
+    def decode(self, latent, freq_max=None, time_max=None):
         recon = self.decoder(latent)
+        if freq_max is not None and time_max is not None:
+            # flatten per-channel max values
+            B, C, _, _ = recon.shape
+            # shape [B*C, 2] for feeding into MLP
+            scale_input = torch.stack([freq_max.squeeze(-1).squeeze(-1),
+                                       time_max.squeeze(-1).squeeze(-1)], dim=-1).view(-1, 2)
+            scale = self.scale_mlp(scale_input)  # shape [B*C, 1]
+            scale = scale.view(B, C, 1, 1)
+            recon = recon * scale
         return recon
 
-    def generate(self, latent):
-        recon, _ = self.decoder(latent)
+    def generate(self, latent, freq_max=None, time_max=None):
+        recon, _ = self.decoder(latent, freq_max, time_max)
         recon_complex = torch.complex(recon[:, 0, :, :], recon[:, 1, :, :])
         audio_recon = self.inv_spectrogram(recon_complex)
         return audio_recon
