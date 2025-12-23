@@ -48,6 +48,14 @@ class ConvFirstBranch(nn.Module):
     def forward(self, x1, x2):
         out1 = x1
         out2 = x2
+        # ensure correct shape: [B, 3, H, W]
+        if out1.dim() == 5:
+            out1 = out1.view(out1.size(0), out1.size(
+                1)*out1.size(2), out1.size(3), out1.size(4))
+        if out2.dim() == 5:
+            out2 = out2.view(out2.size(0), out2.size(
+                1)*out2.size(2), out2.size(3), out2.size(4))
+
         for conv in self.conv_blocks:
             out1 = conv(out1)
             out2 = conv(out2)
