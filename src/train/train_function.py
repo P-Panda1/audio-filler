@@ -103,8 +103,11 @@ def train_model(
                 recon, mu, logvar, target = model(waveform)
                 target = target[:, 0:2, :, :]
 
-                print(
-                    f"Reconstructed shape: {recon.shape}, Target shape: {target.shape}")
+                # For data parallelisation
+                if target.dim() == 5:
+                    target = target.squeeze(2)
+                if recon.dim() == 5:
+                    recon = recon.squeeze(2)
                 recon_loss = recon_criterion(recon, target)
                 kl_loss = -0.5 * \
                     torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
