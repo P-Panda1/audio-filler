@@ -26,6 +26,31 @@ import os
 import sys
 from pathlib import Path
 
+from google.cloud import storage
+
+
+def download_from_gcs(gcs_uri: str, local_path: str):
+    """
+    Download a file from GCS to local path.
+    Example:
+      gcs_uri = gs://model_log/trained_models/large_model/best_model.pt
+    """
+    assert gcs_uri.startswith("gs://"), "Invalid GCS URI"
+
+    _, bucket_name, *blob_parts = gcs_uri.split("/")
+    blob_name = "/".join(blob_parts)
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+
+    local_path = Path(local_path)
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"⬇️  Downloading {gcs_uri} → {local_path}")
+    blob.download_to_filename(local_path)
+    print("✅ Download complete")
+
 
 # Allow running from repo root
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,12 +153,18 @@ def main():
             f"🚀 Detected {torch.cuda.device_count()} GPUs! Using DataParallel.")
         model = torch.nn.DataParallel(model)
 
-    checkpoint = torch.load("best_model.pt", map_location=device)
+    # ---- LOAD CHECKPOINT BEFORE COMPILE ----
+    state_dict = torch.load(LOCAL_BEST_MODEL, map_location=device)
+
+    # Handle DataParallel checkpoints
+    if any(k.startswith("module.") for k in state_dict):
+        state_dict = {k.replace("module.", ""): v for k,
+                      v in state_dict.items()}
 
     if isinstance(model, torch.nn.DataParallel):
-        model.module.load_state_dict(checkpoint)
+        model.module.load_state_dict(state_dict)
     else:
-        model.load_state_dict(checkpoint)
+        model.load_state_dict(state_dict)
 
     model = torch.compile(model)
     model.eval()
@@ -172,4 +203,10 @@ def main():
 
 
 if __name__ == "__main__":
+    BEST_MODEL_GCS = "gs://model_log/trained_models/large_model/best_model.pt"
+    LOCAL_BEST_MODEL = "best_model.pt"
+
+    if not Path(LOCAL_BEST_MODEL).exists():
+        download_from_gcs(BEST_MODEL_GCS, LOCAL_BEST_MODEL)
+
     main()
