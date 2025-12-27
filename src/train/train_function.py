@@ -151,7 +151,7 @@ def train_model(
         for epoch in progress_bar:
 
             # --- Mixed Precision Context ---
-            with autocast():
+            with autocast(device_type=device):
                 recon, mu, logvar, target = model(x_train)
                 target = target[:, 0:2, :, :]
 
