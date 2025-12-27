@@ -66,23 +66,7 @@ def train_model(
     scaler = GradScaler()  # For Mixed Precision
 
     cos_sim = nn.CosineSimilarity(dim=1)
-
-    def complex_hybrid_loss(recon, target, alpha=0.7):
-        # Make last dimension contiguous for complex conversion
-        recon_c = torch.view_as_complex(recon.permute(0, 2, 3, 1).contiguous())
-        target_c = torch.view_as_complex(
-            target.permute(0, 2, 3, 1).contiguous())
-
-        # Magnitude loss
-        mag_loss = nn.L1Loss()(torch.abs(recon_c), torch.abs(target_c))
-
-        # Phase-ish similarity
-        recon_flat = recon.flatten(1)
-        target_flat = target.flatten(1)
-        cos_sim = nn.CosineSimilarity(dim=1)
-        phase_loss = 1 - cos_sim(recon_flat, target_flat).mean()
-
-        return alpha * mag_loss + (1 - alpha) * phase_loss
+    recon_criterion = nn.L1Loss()
 
     best_acc = -1.0
     best_model_path = None
@@ -162,7 +146,7 @@ def train_model(
                     target = target.squeeze(2)
                 if recon.dim() == 5:
                     recon = recon.squeeze(2)
-                recon_loss = complex_hybrid_loss(recon, target)
+                recon_loss = recon_criterion(recon, target)
                 kl_loss = -0.5 * \
                     torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 
