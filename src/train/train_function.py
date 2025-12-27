@@ -185,7 +185,7 @@ def train_model(
             # Validation step
             if val_waveform is not None:
                 model.eval()
-                with torch.no_grad(), autocast():
+                with torch.no_grad(), autocast(device_type=device):
                     recon_val, mu_val, logvar_val, target_val = model(
                         x_val)
                     target_val = target_val[:, 0:2, :, :]
