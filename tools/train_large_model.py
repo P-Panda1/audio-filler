@@ -117,7 +117,8 @@ def main():
     # Initiate Spectogram Block
     _, _, spectrogram_config, _ = configs
     from src.blocks.SpectrogramBlock import SpectrogramBlock
-    spectrogram_model = SpectrogramBlock(spectrogram_config, device).to(device)
+    spectrogram_model = SpectrogramBlock(
+        spectrogram_config, device, mode="train").to(device)
 
     #
     if torch.cuda.device_count() > 1:

@@ -131,7 +131,7 @@ def train_model(
 
             # --- Mixed Precision Context ---
             with autocast():
-                recon, mu, logvar, target = model(x_train, mode=model_mode)
+                recon, mu, logvar, target = model(x_train)
                 target = target[:, 0:2, :, :]
 
                 # For data parallelisation
@@ -166,7 +166,7 @@ def train_model(
                 model.eval()
                 with torch.no_grad(), autocast():
                     recon_val, mu_val, logvar_val, target_val = model(
-                        x_val, mode=model_mode)
+                        x_val)
                     target_val = target_val[:, 0:2, :, :]
                     if target_val.dim() == 5:
                         target_val = target_val.squeeze(2)
