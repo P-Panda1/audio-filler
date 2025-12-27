@@ -68,16 +68,18 @@ def train_model(
     cos_sim = nn.CosineSimilarity(dim=1)
 
     def complex_hybrid_loss(recon, target, alpha=0.7):
-        # Convert [B,2,H,W] to complex [B,H,W]
-        recon_c = torch.view_as_complex(recon.permute(0, 2, 3, 1))
-        target_c = torch.view_as_complex(target.permute(0, 2, 3, 1))
+        # Make last dimension contiguous for complex conversion
+        recon_c = torch.view_as_complex(recon.permute(0, 2, 3, 1).contiguous())
+        target_c = torch.view_as_complex(
+            target.permute(0, 2, 3, 1).contiguous())
 
         # Magnitude loss
         mag_loss = nn.L1Loss()(torch.abs(recon_c), torch.abs(target_c))
 
-        # Phase-ish similarity (flattened)
+        # Phase-ish similarity
         recon_flat = recon.flatten(1)
         target_flat = target.flatten(1)
+        cos_sim = nn.CosineSimilarity(dim=1)
         phase_loss = 1 - cos_sim(recon_flat, target_flat).mean()
 
         return alpha * mag_loss + (1 - alpha) * phase_loss
