@@ -200,7 +200,7 @@ def train_model(
 
                     # Update progress bar occasionally, not every step
                     progress_bar.set_postfix(
-                        {"Loss": f"{current_loss_val:.3f}", "RecAcc": f"{recon_acc:.3f}"})
+                        {"Loss": f"{current_loss_val:.3f}", "RecAcc": f"{recon_acc:.3f}", "Epoch": epoch + 1, "ValAcc": f"{recon_acc_val:.3f}" if val_waveform is not None else "N/A"})
 
         # Close file handles at end of batch_idx
         batch_log_file.close()
