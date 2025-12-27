@@ -143,9 +143,21 @@ def main():
     model = EncoderDecoderModel(
         configs, device=device, mode="train").to(device)
 
-    # or "cpu" if not using GPU
-    state_dict = torch.load("best_model.pt", map_location=device)
-    model.load_state_dict(state_dict)
+    ckpt_path = "best_model.pt"
+    if os.path.exists(ckpt_path):
+        print(f"🔁 Loading checkpoint: {ckpt_path}")
+        state_dict = torch.load(ckpt_path, map_location=device)
+
+        clean_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith("_orig_mod.module."):
+                clean_state_dict[k.replace("_orig_mod.module.", "")] = v
+            elif k.startswith("module."):
+                clean_state_dict[k.replace("module.", "")] = v
+            else:
+                clean_state_dict[k] = v
+
+        model.load_state_dict(clean_state_dict, strict=True)
 
     # Initiate Spectogram Block
     _, _, spectrogram_config, _ = configs
