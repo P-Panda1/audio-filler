@@ -213,20 +213,26 @@ def train_model(
         print(
             f"batch_idx {batch_idx+1} Complete. Approx Acc: {batch_idx_acc:.4f}")
 
-        # --- Saving & Uploading (unchanged logic) ---
-        batch_idx_model_path = os.path.join(
-            log_dir, f"model_batch_idx{batch_idx+1}.pt")
-        torch.save(model.state_dict(), batch_idx_model_path)
+        # # --- Saving & Uploading (unchanged logic) ---
+        # batch_idx_model_path = os.path.join(
+        #     log_dir, f"model_batch_idx{batch_idx+1}.pt")
+        # torch.save(model.state_dict(), batch_idx_model_path)
 
-        if upload_all_epochs_to_gcs:
-            dest_name = f"{gcs_dest_prefix.rstrip('/')}/batch_idx_{batch_idx+1}.pt" if gcs_dest_prefix else f"batch_idx_{batch_idx+1}.pt"
-            upload_to_gcs(batch_idx_model_path, dest_name)
+        # if upload_all_epochs_to_gcs:
+        #     dest_name = f"{gcs_dest_prefix.rstrip('/')}/batch_idx_{batch_idx+1}.pt" if gcs_dest_prefix else f"batch_idx_{batch_idx+1}.pt"
+        #     upload_to_gcs(batch_idx_model_path, dest_name)
 
-        if batch_idx_acc > best_acc:
+        if batch_idx_acc >= best_acc and batch_idx % 50 == 0:
             best_acc = batch_idx_acc
             best_model_path = os.path.join(log_dir, "best_model.pt")
-            torch.save(model.state_dict(), best_model_path)
+            try:
+                torch.save(model.state_dict(), best_model_path)
+            except RuntimeError as e:
+                print(f"⚠️ Skipping save at batch {batch_idx+1}: {e}")
+
             if upload_best_to_gcs:
+                print(
+                    f"Uploading best model with Acc: {best_acc:.4f} to GCS...")
                 dest_name = f"{gcs_dest_prefix.rstrip('/')}/best_model.pt" if gcs_dest_prefix else "best_model.pt"
                 upload_to_gcs(best_model_path, dest_name)
 
