@@ -109,9 +109,9 @@ def train_model(
 
         # Apply spectrogram preprocessing if provided
         x_train = spectogram_model(
-            train_waveform) if spectogram_model else train_waveform
-        x_val = spectogram_model(val_waveform) if (
-            spectogram_model and val_waveform is not None) else val_waveform
+            train_waveform).float() if spectogram_model else train_waveform.float()
+        x_val = spectogram_model(val_waveform).float() if (
+            spectogram_model and val_waveform is not None) else val_waveform.float()
 
         model.train()
 
