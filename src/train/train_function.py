@@ -56,10 +56,24 @@ def train_model(
     # Keep model in FP32 initially, let AMP handle casting
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scaler = GradScaler()  # For Mixed Precision
+    # scaler = GradScaler()  # For Mixed Precision
 
-    recon_criterion = nn.MSELoss()
     cos_sim = nn.CosineSimilarity(dim=1)
+
+    def complex_hybrid_loss(recon, target, alpha=0.7):
+        # Convert [B,2,H,W] to complex [B,H,W]
+        recon_c = torch.view_as_complex(recon.permute(0, 2, 3, 1))
+        target_c = torch.view_as_complex(target.permute(0, 2, 3, 1))
+
+        # Magnitude loss
+        mag_loss = nn.L1Loss()(torch.abs(recon_c), torch.abs(target_c))
+
+        # Phase-ish similarity (flattened)
+        recon_flat = recon.flatten(1)
+        target_flat = target.flatten(1)
+        phase_loss = 1 - cos_sim(recon_flat, target_flat).mean()
+
+        return alpha * mag_loss + (1 - alpha) * phase_loss
 
     best_acc = -1.0
     best_model_path = None
@@ -78,7 +92,7 @@ def train_model(
     if spectogram_model:
         spectogram_model = spectogram_model.to(device)
 
-    print(f"Starting training on {device} with AMP enabled...")
+    print(f"Starting training on {device}")
     for batch_idx, (waveform, labels) in enumerate(dataloader):
         # Non-blocking transfer if pin_memory=True in dataloader
         waveform = waveform.to(device, non_blocking=True)
@@ -129,32 +143,25 @@ def train_model(
         accum_counter = 0
         for epoch in progress_bar:
 
-            # --- Mixed Precision Context ---
-            with autocast():
-                recon, mu, logvar, target = model(x_train)
-                target = target[:, 0:2, :, :]
+            # --- Standard Training Step (no AMP, no accumulation) ---
+            recon, mu, logvar, target = model(x_train)
+            target = target[:, 0:2, :, :]
 
-                # For data parallelisation
-                if target.dim() == 5:
-                    target = target.squeeze(2)
-                if recon.dim() == 5:
-                    recon = recon.squeeze(2)
-                recon_loss = recon_criterion(recon, target)
-                kl_loss = -0.5 * \
-                    torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+            # For data parallelisation
+            if target.dim() == 5:
+                target = target.squeeze(2)
+            if recon.dim() == 5:
+                recon = recon.squeeze(2)
 
-                loss = recon_weight * recon_loss + beta_kl * kl_loss
+            recon_loss = complex_hybrid_loss(recon, target)
+            kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 
-                # Normalize loss for gradient accumulation to keep magnitude consistent
-                loss = loss / accumulation_steps
-            accum_counter += 1
-            # --- Backward & Optimizer Step ---
-            scaler.scale(loss).backward()
+            loss = recon_weight * recon_loss + beta_kl * kl_loss
 
-            if accum_counter % accumulation_steps == 0:
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad()
+            # Backward & optimizer step
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
             # --- Logging Logic (Optimized) ---
             # We multiply loss back by accumulation_steps strictly for logging display
