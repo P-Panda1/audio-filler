@@ -144,7 +144,7 @@ def main():
         configs, device=device, mode="train").to(device)
 
     # or "cpu" if not using GPU
-    state_dict = torch.load("../best_model.pt", map_location=device)
+    state_dict = torch.load("best_model.pt", map_location=device)
     model.load_state_dict(state_dict)
 
     # Initiate Spectogram Block
