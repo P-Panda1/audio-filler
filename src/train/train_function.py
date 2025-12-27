@@ -29,7 +29,7 @@ def train_model(
     num_epochs=20,
     device="cuda",
     lr=1e-4,
-    beta_kl=0.001,
+    beta_kl=0.00,
     recon_weight=1.0,
     class_weight=1.0,
     log_interval=10,
