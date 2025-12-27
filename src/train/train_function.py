@@ -202,26 +202,28 @@ def train_model(
                     progress_bar.set_postfix(
                         {"Loss": f"{current_loss_val:.3f}", "RecAcc": f"{recon_acc:.3f}"})
 
-        # Close file handles at end of epoch
+        # Close file handles at end of batch_idx
         batch_log_file.close()
         perf_log_file.close()
 
-        # Calculate epoch average for BEST model logic
+        # Calculate batch_idx average for BEST model logic
         # Note: This is a rough average based on log_interval samples
-        epoch_acc = running_recon_acc / (len(dataloader) / log_interval)
+        batch_idx_acc = running_recon_acc / (len(dataloader) / log_interval)
 
-        print(f"Epoch {epoch+1} Complete. Approx Acc: {epoch_acc:.4f}")
+        print(
+            f"batch_idx {batch_idx+1} Complete. Approx Acc: {batch_idx_acc:.4f}")
 
         # --- Saving & Uploading (unchanged logic) ---
-        epoch_model_path = os.path.join(log_dir, f"model_epoch{epoch+1}.pt")
-        torch.save(model.state_dict(), epoch_model_path)
+        batch_idx_model_path = os.path.join(
+            log_dir, f"model_batch_idx{batch_idx+1}.pt")
+        torch.save(model.state_dict(), batch_idx_model_path)
 
         if upload_all_epochs_to_gcs:
-            dest_name = f"{gcs_dest_prefix.rstrip('/')}/epoch_{epoch+1}.pt" if gcs_dest_prefix else f"epoch_{epoch+1}.pt"
-            upload_to_gcs(epoch_model_path, dest_name)
+            dest_name = f"{gcs_dest_prefix.rstrip('/')}/batch_idx_{batch_idx+1}.pt" if gcs_dest_prefix else f"batch_idx_{batch_idx+1}.pt"
+            upload_to_gcs(batch_idx_model_path, dest_name)
 
-        if epoch_acc > best_acc:
-            best_acc = epoch_acc
+        if batch_idx_acc > best_acc:
+            best_acc = batch_idx_acc
             best_model_path = os.path.join(log_dir, "best_model.pt")
             torch.save(model.state_dict(), best_model_path)
             if upload_best_to_gcs:
