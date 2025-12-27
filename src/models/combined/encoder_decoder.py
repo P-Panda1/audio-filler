@@ -58,7 +58,6 @@ class EncoderDecoderModel(nn.Module):
         return recon, mu, var, spec_dict['recon_spec']
 
     def encode(self, x):
-        x = x.to(device)
 
         if self.mode == "default":
             spec_dict = self.spectrogram(x)
