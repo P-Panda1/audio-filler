@@ -6,6 +6,7 @@ from tqdm import tqdm
 import csv
 import os
 from typing import Optional
+from src.blocks.SpectrogramBlock import SpectrogramBlock
 
 # Optional GCS upload support
 try:
@@ -32,7 +33,9 @@ def train_model(
     gcs_dest_prefix: Optional[str] = None,
     create_archive: bool = False,
     archive_path: Optional[str] = None,
-    accumulation_steps: int = 25  # Moved to arg for clarity
+    accumulation_steps: int = 1,  # Moved to arg for clarity
+    val_split: float = 0.1,
+    spectogram_model: Optional[SpectrogramBlock] = None,
 ):
     os.makedirs(log_dir, exist_ok=True)
     batch_log_path = os.path.join(log_dir, "batch_log.csv")
@@ -72,12 +75,42 @@ def train_model(
             except Exception as e:
                 print(f"GCS upload failed: {e}")
 
-    print(f"Starting training on {device} with AMP enabled...")
+    if spectogram_model:
+        spectogram_model = spectogram_model.to(device)
 
-    for epoch in range(num_epochs):
+    print(f"Starting training on {device} with AMP enabled...")
+    for batch_idx, (waveform, labels) in enumerate(dataloader):
+        # Non-blocking transfer if pin_memory=True in dataloader
+        waveform = waveform.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
+
+        # Determine split index
+        if val_split > 0.0:
+            val_size = int(waveform.size(0) * val_split)
+            train_size = waveform.size(0) - val_size
+
+            train_waveform = waveform[:train_size]
+            train_labels = labels[:train_size]
+
+            val_waveform = waveform[train_size:]
+            val_labels = labels[train_size:]
+        else:
+            train_waveform = waveform
+            train_labels = labels
+            val_waveform = None
+            val_labels = None
+
+        # Apply spectrogram preprocessing if provided
+        x_train = spectogram_model(
+            train_waveform) if spectogram_model else train_waveform
+        x_val = spectogram_model(val_waveform) if (
+            spectogram_model and val_waveform is not None) else val_waveform
+
+        model_mode = "train" if spectogram_model else "default"
+
         model.train()
 
-        # Open log file ONCE per epoch to reduce I/O overhead
+        # Open log file ONCE per batch to reduce I/O overhead
         batch_log_file = open(batch_log_path, "a", newline="")
         batch_writer = csv.writer(batch_log_file)
 
@@ -85,22 +118,20 @@ def train_model(
         perf_log_file = open(perf_log_path, "a", newline="")
         perf_writer = csv.writer(perf_log_file)
 
-        # Trackers for average epoch metrics
+        # Trackers for average batch metrics
         running_recon_acc = 0.0
         running_loss = 0.0
 
         optimizer.zero_grad()  # Initialize gradients once
 
-        progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
-
-        for batch_idx, (waveform, labels) in enumerate(progress_bar):
-            # Non-blocking transfer if pin_memory=True in dataloader
-            waveform = waveform.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
+        progress_bar = tqdm(range(num_epochs),
+                            desc=f"batch {batch_idx+1}/{len(dataloader)}")
+        accum_counter = 0
+        for epoch in progress_bar:
 
             # --- Mixed Precision Context ---
             with autocast():
-                recon, mu, logvar, target = model(waveform)
+                recon, mu, logvar, target = model(x_train, mode=model_mode)
                 target = target[:, 0:2, :, :]
 
                 # For data parallelisation
@@ -116,11 +147,11 @@ def train_model(
 
                 # Normalize loss for gradient accumulation to keep magnitude consistent
                 loss = loss / accumulation_steps
-
+            accum_counter += 1
             # --- Backward & Optimizer Step ---
             scaler.scale(loss).backward()
 
-            if (batch_idx + 1) % accumulation_steps == 0:
+            if accum_counter % accumulation_steps == 0:
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
@@ -129,12 +160,28 @@ def train_model(
             # We multiply loss back by accumulation_steps strictly for logging display
             current_loss_val = loss.item() * accumulation_steps
 
+            recon_acc_val = "N/A"
+            # Validation step
+            if val_waveform is not None:
+                model.eval()
+                with torch.no_grad(), autocast():
+                    recon_val, mu_val, logvar_val, target_val = model(
+                        x_val, mode=model_mode)
+                    target_val = target_val[:, 0:2, :, :]
+                    if target_val.dim() == 5:
+                        target_val = target_val.squeeze(2)
+                    if recon_val.dim() == 5:
+                        recon_val = recon_val.squeeze(2)
+                    recon_acc_val = cos_sim(recon_val.flatten(start_dim=1),
+                                            target_val.flatten(start_dim=1)).mean().item()
+
             # Buffer write to CSV (OS handles buffering, but avoiding open() is key)
             batch_writer.writerow([
                 epoch + 1, batch_idx + 1,
                 f"{current_loss_val:.4f}",
                 f"{recon_loss.item():.4f}",
-                f"{kl_loss.item():.4f}"
+                f"{kl_loss.item():.4f}",
+                f"{recon_acc_val:.4f}" if val_waveform is not None else "N/A"
             ])
 
             # Calculate heavy metrics LESS frequently

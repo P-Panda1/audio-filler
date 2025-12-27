@@ -100,40 +100,24 @@ def main():
         )
 
     # Split into train/val if requested
-    val_dataloader = None
-    if args.val_split and 0.0 < args.val_split < 1.0:
-        total = len(dataset)
-        val_size = int(total * args.val_split)
-        train_size = total - val_size
-        if val_size <= 0 or train_size <= 0:
-            print("Dataset too small or val_split too large; not splitting")
-        else:
-            from torch.utils.data import random_split
-            train_ds, val_ds = random_split(dataset, [train_size, val_size])
-            dataloader = DataLoader(
-                train_ds, batch_size=args.batch_size, shuffle=True, pin_memory=True,
-                # Comment this if trying out locally
-                num_workers=16,      # Critical: Set to 2 or 4 per GPU
-                # pin_memory=True,    # Critical: Speeds up .to('cuda')
-                prefetch_factor=4   # Optional: Preloads batches
-            )
-            val_dataloader = DataLoader(
-                val_ds, batch_size=args.batch_size, shuffle=False, pin_memory=True,
-                # Comment this if trying out locally
-                num_workers=16,      # Critical: Set to 2 or 4 per GPU
-                # pin_memory=True,    # Critical: Speeds up .to('cuda')
-                prefetch_factor=4   # Optional: Preloads batches
-            )
-            print(f"Split dataset: train={train_size}, val={val_size}")
-    if val_dataloader is None:
-        dataloader = DataLoader(
-            dataset, batch_size=args.batch_size, shuffle=True)
+    dataloader = DataLoader(
+        dataset=dataset, batch_size=args.batch_size, shuffle=True,
+        # Comment this if trying out locally
+        num_workers=16,      # Critical: Set to 2 or 4 per GPU
+        pin_memory=True,    # Critical: Speeds up .to('cuda')
+        prefetch_factor=4   # Optional: Preloads batches
+    )
 
     # Load large_model configs
     configs = load_all_configs("large_model")
 
     # Instantiate model
     model = EncoderDecoderModel(configs).to(device)
+
+    # Initiate Spectogram Block
+    _, _, spectrogram_config, _ = configs
+    from src.blocks.SpectrogramBlock import SpectrogramBlock
+    spectrogram_model = SpectrogramBlock(spectrogram_config, device).to(device)
 
     #
     if torch.cuda.device_count() > 1:
@@ -166,6 +150,8 @@ def main():
             gcs_dest_prefix=args.gcs_dest_prefix,
             create_archive=args.create_archive,
             archive_path=args.archive_path,
+            val_split=args.val_split,
+            spectogram_model=spectrogram_model
             # GPU only
         )
     except KeyboardInterrupt:

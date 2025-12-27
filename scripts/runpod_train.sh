@@ -46,6 +46,9 @@ set -e
 
 apt update && apt install -y git
 
+# This installs FFmpeg system-wide on the pod
+apt install -y ffmpeg
+
 apt remove -y python3-blinker || true
 
 if [ ! -d "$REPO_NAME" ]; then
@@ -54,8 +57,8 @@ fi
 
 cd "$REPO_NAME"
 
-git checkout master
-git pull origin master
+git checkout train
+git pull origin train
 
 pip install -r requirements.txt --break-system-packages
 

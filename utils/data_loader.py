@@ -7,23 +7,6 @@ from torch.utils.data import Dataset
 import torchaudio
 # from torchcodec.decoders import AudioDecoder
 
-torchaudio.set_audio_backend("ffmpeg")
-
-
-def load_audio(path, target_sr):
-    try:
-        audio, sr = sf.read(path, dtype="float32", always_2d=True)
-    except RuntimeError as e:
-        raise RuntimeError(f"SoundFile failed on {path}: {e}")
-
-    # audio shape: [T, C] → [C, T]
-    audio = torch.from_numpy(audio.T)
-
-    if sr != target_sr:
-        audio = torchaudio.functional.resample(audio, sr, target_sr)
-
-    return audio, target_sr
-
 
 class MusicGenreDataset(Dataset):
     def __init__(self, data_dir, clip_duration=15, stride=1, sample_rate=16000):
@@ -63,7 +46,7 @@ class MusicGenreDataset(Dataset):
             #     continue
 
             try:
-                waveform, audio_sample_rate = load_audio(
+                waveform, audio_sample_rate = torchaudio.load(
                     audio_file, self.sample_rate)
 
                 total_samples = waveform.shape[-1]
@@ -113,7 +96,7 @@ class MusicGenreDataset(Dataset):
             waveform = waveform[..., : self.clip_length]
 
         # Add channel dimension
-        waveform = waveform.unsqueeze(0)
+        # waveform = waveform.unsqueeze(0)
         label = self.genre_to_idx[genre]
 
         return waveform, label

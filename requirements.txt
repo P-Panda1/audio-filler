@@ -1,9 +1,9 @@
 # Core Torch Stack
-# torch==2.9.0
-# torchaudio==2.9.0
-# torchcodec==0.8.1  # Latest available version compatible with torch 2.9.0
-torch==2.8.0
-torchaudio==2.8.0
+torch==2.9.0
+torchaudio==2.9.0
+torchcodec==0.8.1  # Latest available version compatible with torch 2.9.0
+# torch==2.8.0
+# torchaudio==2.8.0
 
 # # Fast API
 # fastapi
@@ -32,6 +32,8 @@ gcsfs
 
 # Utilities
 tqdm
+
+dotenv>=0.20.0,<1.0
 
 
 

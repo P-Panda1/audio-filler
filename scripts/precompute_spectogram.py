@@ -26,7 +26,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Local + remote paths
 LOCAL_OUT_DIR = Path("/tmp/spec_cache")
-GCS_OUT_DIR = f"{DATA_BUCKET}/optimised"
+GCS_OUT_DIR = f"{DATA_BUCKET}/data"
 
 LOCAL_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -46,9 +46,7 @@ def main():
         dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=NUM_WORKERS,
         pin_memory=True,
-        persistent_workers=True,
     )
 
     print("🎛️ Loading spectrogram block...")
@@ -65,9 +63,12 @@ def main():
         for waveforms, labels in loader:
             waveforms = waveforms.to(DEVICE)
 
+            print(f"� processing batch {idx:08d}...", end="\r")
+
             spec_dict = spectrogram(waveforms)
             freq = spec_dict["freq_spec"]
             time = spec_dict["time_spec"]
+            recon = spec_dict["recon_spec"]
 
             if freq.dim() == 5:
                 freq = freq.squeeze(2)
@@ -76,33 +77,31 @@ def main():
 
             freq_max = freq.abs().amax(dim=[2, 3], keepdim=True)
             time_max = time.abs().amax(dim=[2, 3], keepdim=True)
+            recon_max = recon.abs().amax(dim=[2, 3], keepdim=True)
 
             freq_norm = freq / (freq_max + 1e-8)
             time_norm = time / (time_max + 1e-8)
+            recon = recon / (recon_max + 1e-8)
 
-            for b in range(freq.shape[0]):
-                local_file = f"/{idx:08d}.pt"
-                gcs_file = f"{GCS_OUT_DIR}/{idx:08d}.pt"
+            batch_file = LOCAL_OUT_DIR / f"batch_{idx:08d}.pt"
+            gcs_file = f"{GCS_OUT_DIR}/batch_{idx:08d}.pt"
 
-                if fs.exists(gcs_file):
-                    idx += 1
-                    continue  # resume-safe
-
-                sample = {
-                    "freq_spec": freq_norm[b].cpu(),
-                    "time_spec": time_norm[b].cpu(),
-                    "freq_max": freq_max[b].cpu(),
-                    "time_max": time_max[b].cpu(),
+            if not fs.exists(gcs_file):
+                batch = {
+                    "freq_spec": freq_norm.cpu(),
+                    "time_spec": time_norm.cpu(),
+                    "recon": recon.cpu(),
+                    "freq_max": freq_max.cpu(),
+                    "time_max": time_max.cpu(),
+                    "recon_max": recon_max.cpu(),
+                    "labels": labels.cpu(),
                 }
 
-                torch.save(sample, local_file)
-                fs.put(str(local_file), gcs_file)
-                local_file.unlink()  # free disk
+                torch.save(batch, batch_file)
+                fs.put(str(batch_file), gcs_file)
+                batch_file.unlink()
 
-                idx += 1
-
-            if idx % 500 == 0:
-                print(f"✅ Saved {idx} samples")
+            idx += 1  # increment per batch
 
     print(f"🎉 Done. Total samples written: {idx}")
 
