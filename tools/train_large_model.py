@@ -155,18 +155,18 @@ def main():
             f"🚀 Detected {torch.cuda.device_count()} GPUs! Using DataParallel.")
         model = torch.nn.DataParallel(model)
 
-    # ---- LOAD CHECKPOINT BEFORE COMPILE ----
-    state_dict = torch.load(LOCAL_BEST_MODEL, map_location=device)
+    # # ---- LOAD CHECKPOINT BEFORE COMPILE ----
+    # state_dict = torch.load(LOCAL_BEST_MODEL, map_location=device)
 
-    # Handle DataParallel checkpoints
-    if any(k.startswith("module.") for k in state_dict):
-        state_dict = {k.replace("module.", ""): v for k,
-                      v in state_dict.items()}
+    # # Handle DataParallel checkpoints
+    # if any(k.startswith("module.") for k in state_dict):
+    #     state_dict = {k.replace("module.", ""): v for k,
+    #                   v in state_dict.items()}
 
-    if isinstance(model, torch.nn.DataParallel):
-        model.module.load_state_dict(state_dict)
-    else:
-        model.load_state_dict(state_dict)
+    # if isinstance(model, torch.nn.DataParallel):
+    #     model.module.load_state_dict(state_dict)
+    # else:
+    #     model.load_state_dict(state_dict)
 
     model = torch.compile(model)
     model.eval()
@@ -205,10 +205,5 @@ def main():
 
 
 if __name__ == "__main__":
-    BEST_MODEL_GCS = "gs://model_log/trained_models/large_model/best_model.pt"
-    LOCAL_BEST_MODEL = "best_model.pt"
-
-    if not Path(LOCAL_BEST_MODEL).exists():
-        download_from_gcs(BEST_MODEL_GCS, LOCAL_BEST_MODEL)
 
     main()
