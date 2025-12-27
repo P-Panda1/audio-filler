@@ -143,6 +143,10 @@ def main():
     model = EncoderDecoderModel(
         configs, device=device, mode="train").to(device)
 
+    # or "cpu" if not using GPU
+    state_dict = torch.load("../best_model.pt", map_location=device)
+    model.load_state_dict(state_dict)
+
     # Initiate Spectogram Block
     _, _, spectrogram_config, _ = configs
     from src.blocks.SpectrogramBlock import SpectrogramBlock
