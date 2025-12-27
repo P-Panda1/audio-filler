@@ -169,7 +169,6 @@ def main():
     #     model.load_state_dict(state_dict)
 
     model = torch.compile(model)
-    model.eval()
 
     # Ensure logs directory exists
     os.makedirs(args.log_dir, exist_ok=True)
