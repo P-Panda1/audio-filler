@@ -66,7 +66,7 @@ def train_model(
     scaler = GradScaler()  # For Mixed Precision
 
     cos_sim = nn.CosineSimilarity(dim=1)
-    recon_criterion = nn.MSELoss()
+    recon_criterion = nn.L1Loss()
 
     best_acc = -1.0
     best_model_path = None
@@ -92,7 +92,7 @@ def train_model(
         labels = labels.to(device, non_blocking=True)
 
         # Determine split index
-        if val_split > 0.0:
+        if val_split > 0.0 and batch_idx % log_interval == 0:
             val_size = int(waveform.size(0) * val_split)
             train_size = waveform.size(0) - val_size
 
@@ -137,7 +137,7 @@ def train_model(
         for epoch in progress_bar:
 
             # --- Mixed Precision Context ---
-            with autocast(device_type=device):
+            with autocast(device_type=device, dtype=torch.bfloat16):
                 recon, mu, logvar, target = model(x_train)
                 target = target[:, 0:2, :, :]
 
@@ -169,7 +169,7 @@ def train_model(
             # Validation step
             if val_waveform is not None:
                 model.eval()
-                with torch.no_grad(), autocast(device_type=device):
+                with torch.no_grad(), autocast(device_type=device, dtype=torch.bfloat16):
                     recon_val, mu_val, logvar_val, target_val = model(
                         x_val)
                     target_val = target_val[:, 0:2, :, :]
