@@ -81,6 +81,9 @@ else
     echo "Dataset already present at $LOCAL_DATA_DIR/audio-fill/music — skipping download."
 fi
 
+gsutil cp gs://model_log/trained_models/large_model/best_model.pt ./best_model.pt
+
+
 python3 tools/train_large_model.py \
     --data-bucket "$DATA_BUCKET" \
     --model-bucket "$MODEL_BUCKET" \

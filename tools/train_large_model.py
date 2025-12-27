@@ -26,6 +26,7 @@ import os
 import sys
 from pathlib import Path
 
+
 # Allow running from repo root
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -127,8 +128,15 @@ def main():
             f"🚀 Detected {torch.cuda.device_count()} GPUs! Using DataParallel.")
         model = torch.nn.DataParallel(model)
 
-    # Speed up training
+    checkpoint = torch.load("best_model.pt", map_location=device)
+
+    if isinstance(model, torch.nn.DataParallel):
+        model.module.load_state_dict(checkpoint)
+    else:
+        model.load_state_dict(checkpoint)
+
     model = torch.compile(model)
+    model.eval()
 
     # Ensure logs directory exists
     os.makedirs(args.log_dir, exist_ok=True)
