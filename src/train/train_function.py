@@ -7,12 +7,12 @@ import csv
 import os
 from typing import Optional
 from src.blocks.SpectrogramBlock import SpectrogramBlock
-import torch.backends.cudnn as cudnn
+# import torch.backends.cudnn as cudnn
 
-# Enable cuDNN autotuner for optimal convolution performance
-cudnn.benchmark = True
-# Optional: deterministic (if you want reproducibility, otherwise leave False)
-cudnn.deterministic = False
+# # Enable cuDNN autotuner for optimal convolution performance
+# cudnn.benchmark = True
+# # Optional: deterministic (if you want reproducibility, otherwise leave False)
+# cudnn.deterministic = False
 
 
 # Optional GCS upload support
@@ -112,8 +112,6 @@ def train_model(
             train_waveform) if spectogram_model else train_waveform
         x_val = spectogram_model(val_waveform) if (
             spectogram_model and val_waveform is not None) else val_waveform
-
-        model_mode = "train" if spectogram_model else "default"
 
         model.train()
 
@@ -227,7 +225,7 @@ def train_model(
         #     dest_name = f"{gcs_dest_prefix.rstrip('/')}/batch_idx_{batch_idx+1}.pt" if gcs_dest_prefix else f"batch_idx_{batch_idx+1}.pt"
         #     upload_to_gcs(batch_idx_model_path, dest_name)
 
-        if batch_idx_acc >= best_acc and batch_idx % 50 == 0:
+        if batch_idx_acc >= best_acc and batch_idx % 5 == 0:
             best_acc = batch_idx_acc
             best_model_path = os.path.join(log_dir, "best_model.pt")
             try:
