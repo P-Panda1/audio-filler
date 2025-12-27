@@ -71,14 +71,14 @@ export PYTHONPATH=.
 # -----------------------------------------------------
 # Download dataset if not present
 # -----------------------------------------------------
-if [ ! -d "$LOCAL_DATA_DIR/audio-filler-1/music" ]; then
+if [ ! -d "$LOCAL_DATA_DIR/audio-fill/music" ]; then
     echo "Downloading dataset from GCS..."
     python3 tools/download_gcs_music.py \
         --gcs-bucket "$DATA_BUCKET" \
         --prefix music \
         --out-dir "$LOCAL_DATA_DIR"
 else
-    echo "Dataset already present at $LOCAL_DATA_DIR/music — skipping download."
+    echo "Dataset already present at $LOCAL_DATA_DIR/audio-fill/music — skipping download."
 fi
 
 python3 tools/train_large_model.py \
