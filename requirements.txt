@@ -33,7 +33,7 @@ gcsfs
 # Utilities
 tqdm
 
-dotenv>=0.20.0,<1.0
+dotenv==0.9.9
 
 
 
