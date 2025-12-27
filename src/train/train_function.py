@@ -150,6 +150,14 @@ def train_model(
 
             loss = recon_weight * recon_loss + beta_kl * kl_loss
 
+            print("x_train:", x_train.shape)
+            print("recon:", recon.shape)
+            print("target:", target.shape)
+
+            print(torch.isnan(recon).any(), torch.isnan(
+                mu).any(), torch.isnan(logvar).any())
+            print(torch.isinf(recon).any())
+
             # --- Backpropagation with Gradient Accumulation ---
             optimizer.zero_grad()
             loss.backward()
