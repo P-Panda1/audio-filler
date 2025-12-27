@@ -66,7 +66,7 @@ def train_model(
     scaler = GradScaler()  # For Mixed Precision
 
     cos_sim = nn.CosineSimilarity(dim=1)
-    recon_criterion = nn.L1Loss()
+    recon_criterion = nn.MSELoss()
 
     best_acc = -1.0
     best_model_path = None
