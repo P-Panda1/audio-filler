@@ -33,12 +33,14 @@ def download_from_gcs(gcs_uri: str, local_path: str):
     """
     Download a file from GCS to local path.
     Example:
-      gcs_uri = gs://model_log/trained_models/large_model/best_model.pt
+      gs://model_log/trained_models/large_model/best_model.pt
     """
-    assert gcs_uri.startswith("gs://"), "Invalid GCS URI"
+    if not gcs_uri.startswith("gs://"):
+        raise ValueError(f"Invalid GCS URI: {gcs_uri}")
 
-    _, bucket_name, *blob_parts = gcs_uri.split("/")
-    blob_name = "/".join(blob_parts)
+    # Remove scheme
+    gcs_path = gcs_uri[len("gs://"):]  # model_log/...
+    bucket_name, blob_name = gcs_path.split("/", 1)
 
     client = storage.Client()
     bucket = client.bucket(bucket_name)
