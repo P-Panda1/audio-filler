@@ -63,7 +63,7 @@ def train_model(
     # Keep model in FP32 initially, let AMP handle casting
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scaler = GradScaler()  # For Mixed Precision
+    # scaler = GradScaler()  # For Mixed Precision
 
     cos_sim = nn.CosineSimilarity(dim=1)
     recon_criterion = nn.MSELoss()
@@ -85,7 +85,7 @@ def train_model(
     if spectogram_model:
         spectogram_model = spectogram_model.to(device)
 
-    print(f"Starting training on {device} with AMP enabled...")
+    print(f"Starting training on {device} ")
     for batch_idx, (waveform, labels) in enumerate(dataloader):
         # Non-blocking transfer if pin_memory=True in dataloader
         waveform = waveform.to(device, non_blocking=True)
@@ -135,29 +135,25 @@ def train_model(
         for epoch in progress_bar:
 
             # --- Mixed Precision Context ---
-            with autocast(device_type=device, dtype=torch.bfloat16):
-                recon, mu, logvar, target = model(x_train)
-                target = target[:, 0:2, :, :]
+            # with autocast(device_type=device, dtype=torch.bfloat16):
+            recon, mu, logvar, target = model(x_train)
+            target = target[:, 0:2, :, :]
 
-                # For data parallelisation
-                if target.dim() == 5:
-                    target = target.squeeze(2)
-                if recon.dim() == 5:
-                    recon = recon.squeeze(2)
-                recon_loss = recon_criterion(recon, target)
-                kl_loss = -0.5 * \
-                    torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+            # For data parallelisation
+            if target.dim() == 5:
+                target = target.squeeze(2)
+            if recon.dim() == 5:
+                recon = recon.squeeze(2)
+            recon_loss = recon_criterion(recon, target)
+            kl_loss = -0.5 * \
+                torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 
-                loss = recon_weight * recon_loss + beta_kl * kl_loss
+            loss = recon_weight * recon_loss + beta_kl * kl_loss
 
-                # Normalize loss for gradient accumulation to keep magnitude consistent
-                loss = loss / accumulation_steps
-            accum_counter += 1
-            # --- Backward & Optimizer Step ---
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            # --- Backpropagation with Gradient Accumulation ---
             optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
             # --- Logging Logic (Optimized) ---
             # We multiply loss back by accumulation_steps strictly for logging display
@@ -167,7 +163,7 @@ def train_model(
             # Validation step
             if val_waveform is not None:
                 model.eval()
-                with torch.no_grad(), autocast(device_type=device, dtype=torch.bfloat16):
+                with torch.no_grad():  # autocast(device_type=device, dtype=torch.bfloat16):
                     recon_val, mu_val, logvar_val, target_val = model(
                         x_val)
                     target_val = target_val[:, 0:2, :, :]
